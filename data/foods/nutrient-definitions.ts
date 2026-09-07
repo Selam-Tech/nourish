@@ -1,0 +1,51 @@
+export const nutrientDefinitions = [
+  {
+    code: "energy",
+    nameEn: "Energy",
+    unit: "kcal",
+    category: "macro",
+    sortOrder: 1,
+  },
+  {
+    code: "protein",
+    nameEn: "Protein",
+    unit: "g",
+    category: "macro",
+    sortOrder: 2,
+  },
+  {
+    code: "iron",
+    nameEn: "Iron",
+    unit: "mg",
+    category: "mineral",
+    sortOrder: 3,
+  },
+  {
+    code: "calcium",
+    nameEn: "Calcium",
+    unit: "mg",
+    category: "mineral",
+    sortOrder: 4,
+  },
+  {
+    code: "vitamin_a",
+    nameEn: "Vitamin A (RE)",
+    unit: "mcg",
+    category: "vitamin",
+    sortOrder: 5,
+  },
+  {
+    code: "folate",
+    nameEn: "Folate",
+    unit: "mcg",
+    category: "vitamin",
+    sortOrder: 6,
+  },
+  {
+    code: "zinc",
+    nameEn: "Zinc",
+    unit: "mg",
+    category: "mineral",
+    sortOrder: 7,
+  },
+] as const;

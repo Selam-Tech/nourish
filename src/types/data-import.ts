@@ -9,6 +9,29 @@ export interface DataProvenance {
   notes?: string;
 }
 
+/**
+ * Quality metadata attached to an individual nutrient value.
+ *
+ * These fields preserve important information from the source dataset
+ * without changing the numeric nutrient value.
+ */
+export interface NutrientQualityMetadata {
+  /**
+   * Source quality/status marker exactly as represented by the source
+   * dataset when applicable.
+   *
+   * Examples:
+   * - "oa" = data originating outside Africa
+   * - "bracketed" = value shown in square brackets in EFCT
+   */
+  sourceFlag?: string;
+
+  /**
+   * Human-readable explanation of the source flag.
+   */
+  qualityNote?: string;
+}
+
 /** Record for importing a food from an authoritative composition table */
 export interface FoodImportRecord {
   canonicalId: string;
@@ -26,6 +49,13 @@ export interface FoodNutrientImportRecord {
   nutrientCode: string;
   amountPer100g: number;
   provenance: DataProvenance;
+
+  /**
+   * Optional quality metadata from the original composition table.
+   * This allows Nourish to preserve EFCT quality indicators instead
+   * of silently discarding them.
+   */
+  quality?: NutrientQualityMetadata;
 }
 
 /** Price record for import */
@@ -65,6 +95,11 @@ export interface ImportResult {
 /** Interface for dataset importers */
 export interface DatasetImporter<T> {
   sourceName: string;
-  validate(records: T[]): { valid: T[]; invalid: Array<{ record: T; reason: string }> };
+
+  validate(records: T[]): {
+    valid: T[];
+    invalid: Array<{ record: T; reason: string }>;
+  };
+
   import(records: T[]): Promise<ImportResult>;
 }
