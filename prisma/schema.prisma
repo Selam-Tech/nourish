@@ -91,6 +91,7 @@ model HouseholdMember {
   dateOfBirth         DateTime
   sex                 Sex             @default(UNSPECIFIED)
   pregnancyStatus     PregnancyStatus @default(NOT_APPLICABLE)
+  weightKg            Float?
   allergies           String[]        @default([])
   dietaryRestrictions String[]        @default([])
   isActive            Boolean         @default(true)

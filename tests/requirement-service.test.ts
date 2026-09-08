@@ -4,6 +4,7 @@ import {
   calculateHouseholdRequirements,
   calculateIronRequirement,
   calculateMemberRequirements,
+  calculateProteinRequirement,
   calculateZincRequirement,
   findRequirementReference,
 } from "@/services/nutrition/requirement-service";
@@ -602,6 +603,163 @@ describe("calculateZincRequirement", () => {
   });
 });
 
+describe("calculateProteinRequirement", () => {
+  const planDate = new Date("2026-09-08T00:00:00.000Z");
+
+  it("calculates adult protein from actual body weight", () => {
+    const profile = createProfile({
+      memberId: "adult",
+      dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+      sex: "MALE",
+      pregnancyStatus: "NOT_APPLICABLE",
+      weightKg: 60,
+    });
+
+    const result = calculateProteinRequirement(profile, planDate);
+
+    expect(result.requirement).toEqual({
+      nutrientCode: "protein",
+      targetAmount: 49.8,
+      unit: "g",
+      memberId: "adult",
+    });
+
+    expect(result.assumptions.proteinBasis).toBe(
+      "SAFE_LEVEL_G_PER_KG",
+    );
+  });
+
+  it("rounds calculated adult protein to two decimal places", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+      sex: "MALE",
+      pregnancyStatus: "NOT_APPLICABLE",
+      weightKg: 67.3,
+    });
+
+    const result = calculateProteinRequirement(profile, planDate);
+
+    expect(result.requirement?.targetAmount).toBe(55.86);
+  });
+
+  it("does not calculate protein when body weight is missing", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+      sex: "MALE",
+      pregnancyStatus: "NOT_APPLICABLE",
+      weightKg: null,
+    });
+
+    const result = calculateProteinRequirement(profile, planDate);
+
+    expect(result.requirement).toBeNull();
+
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("valid body weight"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects zero body weight", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+      sex: "MALE",
+      pregnancyStatus: "NOT_APPLICABLE",
+      weightKg: 0,
+    });
+
+    const result = calculateProteinRequirement(profile, planDate);
+
+    expect(result.requirement).toBeNull();
+  });
+
+  it("rejects negative body weight", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+      sex: "MALE",
+      pregnancyStatus: "NOT_APPLICABLE",
+      weightKg: -10,
+    });
+
+    const result = calculateProteinRequirement(profile, planDate);
+
+    expect(result.requirement).toBeNull();
+  });
+
+  it("does not invent an under-19 protein target", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("2015-01-01T00:00:00.000Z"),
+      weightKg: 35,
+    });
+
+    const result = calculateProteinRequirement(profile, planDate);
+
+    expect(result.requirement).toBeNull();
+
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("under 19 years"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not calculate pregnancy protein without trimester", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1995-01-01T00:00:00.000Z"),
+      sex: "FEMALE",
+      pregnancyStatus: "PREGNANT",
+      weightKg: 60,
+    });
+
+    const result = calculateProteinRequirement(profile, planDate);
+
+    expect(result.requirement).toBeNull();
+
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("pregnancy trimester"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not calculate lactation protein without postpartum duration", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1995-01-01T00:00:00.000Z"),
+      sex: "FEMALE",
+      pregnancyStatus: "LACTATING",
+      weightKg: 60,
+    });
+
+    const result = calculateProteinRequirement(profile, planDate);
+
+    expect(result.requirement).toBeNull();
+
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("postpartum duration"),
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves WHO FAO UNU protein provenance", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+      sex: "MALE",
+      pregnancyStatus: "NOT_APPLICABLE",
+      weightKg: 60,
+    });
+
+    const result = calculateProteinRequirement(profile, planDate);
+
+    expect(result.provenance).toHaveLength(1);
+    expect(result.provenance[0].source).toBe("FAO_WHO_UNU");
+    expect(result.provenance[0].referenceType).toBe(
+      "SAFE_INTAKE",
+    );
+  });
+});
+
 describe("calculateMemberRequirements", () => {
   it("returns calcium, folate and Vitamin A when bioavailability assumptions are absent", () => {
     const profile = createProfile({
@@ -739,6 +897,86 @@ describe("calculateMemberRequirements", () => {
     expect(result.assumptions.vitaminABasis).toBe("RE");
     expect(result.assumptions.zincBioavailability).toBe("MODERATE");
   });
+
+  it("includes adult protein when a valid body weight is available", () => {
+  const profile = createProfile({
+    memberId: "adult-protein",
+    dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+    sex: "MALE",
+    pregnancyStatus: "NOT_APPLICABLE",
+    weightKg: 60,
+  });
+
+  const result = calculateMemberRequirements(
+    profile,
+    new Date("2026-09-08T00:00:00.000Z"),
+  );
+
+  expect(result.requirements).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        nutrientCode: "protein",
+        targetAmount: 49.8,
+        unit: "g",
+        memberId: "adult-protein",
+      }),
+    ]),
+  );
+
+  expect(result.unavailableNutrients).not.toContain("protein");
+  expect(result.assumptions.proteinBasis).toBe(
+    "SAFE_LEVEL_G_PER_KG",
+  );
+});
+
+it("includes adult protein in optimizer requirements", () => {
+  const adult = createProfile({
+    memberId: "adult-protein",
+    dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+    sex: "MALE",
+    pregnancyStatus: "NOT_APPLICABLE",
+    weightKg: 60,
+  });
+
+  const result = calculateHouseholdRequirements(
+    [adult],
+    new Date("2026-09-08T00:00:00.000Z"),
+  );
+
+  expect(result.optimizerRequirements).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        nutrientCode: "protein",
+        targetAmount: 49.8,
+        unit: "g",
+        memberId: "adult-protein",
+      }),
+    ]),
+  );
+});
+
+it("marks protein unavailable when adult body weight is missing", () => {
+  const profile = createProfile({
+    memberId: "adult-no-weight",
+    dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+    sex: "MALE",
+    pregnancyStatus: "NOT_APPLICABLE",
+    weightKg: null,
+  });
+
+  const result = calculateMemberRequirements(
+    profile,
+    new Date("2026-09-08T00:00:00.000Z"),
+  );
+
+  expect(result.unavailableNutrients).toContain("protein");
+
+  expect(
+    result.requirements.some(
+      (requirement) => requirement.nutrientCode === "protein",
+    ),
+  ).toBe(false);
+});
 });
 
 describe("calculateHouseholdRequirements", () => {

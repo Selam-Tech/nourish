@@ -6,6 +6,11 @@ import {
 } from "../../../data/requirements/fao-who-gift-v1";
 import { faoWhoVitaminAReferenceRecords } from "../../../data/requirements/fao-who-vitamin-a-v1";
 import {
+  faoWhoAdultProteinSafeLevelGramsPerKgPerDay,
+  faoWhoProteinProvenance,
+} from "../../../data/requirements/fao-who-protein-v1";
+
+import {
   faoWhoZincProvenance,
   faoWhoZincReferenceRows,
 } from "../../../data/requirements/fao-who-zinc-v1";
@@ -28,6 +33,7 @@ const SUPPORTED_REFERENCE_NUTRIENTS = [
   "vitamin_a",
   "iron",
   "zinc",
+  "protein",
 ] as const;
 
 export function calculateAgeInCompletedMonths(
@@ -449,6 +455,98 @@ export function calculateZincRequirement(
   };
 }
 
+export function calculateProteinRequirement(
+  profile: RequirementProfile,
+  planDate: Date,
+): {
+  requirement: NutrientRequirement | null;
+  assumptions: RequirementAssumptions;
+  provenance: RequirementProvenance[];
+  warnings: string[];
+} {
+  const assumptions: RequirementAssumptions = {
+    proteinBasis: "SAFE_LEVEL_G_PER_KG",
+    notes: [
+      "Protein modeled using WHO/FAO/UNU 2007 safe intake expressed as grams per kilogram of body weight per day.",
+    ],
+  };
+
+  const provenance = [faoWhoProteinProvenance];
+
+  const ageMonths = calculateAgeInCompletedMonths(
+    profile.dateOfBirth,
+    planDate,
+  );
+
+  if (
+    profile.weightKg === undefined ||
+    profile.weightKg === null ||
+    !Number.isFinite(profile.weightKg) ||
+    profile.weightKg <= 0
+  ) {
+    return {
+      requirement: null,
+      assumptions,
+      provenance,
+      warnings: [
+        "Protein requirement is unavailable because a valid body weight is required.",
+      ],
+    };
+  }
+
+  if (profile.pregnancyStatus === "PREGNANT") {
+    return {
+      requirement: null,
+      assumptions,
+      provenance,
+      warnings: [
+        "Pregnancy protein requirement is unavailable because WHO/FAO/UNU protein recommendations include trimester-specific additions and Nourish does not currently collect pregnancy trimester.",
+      ],
+    };
+  }
+
+  if (profile.pregnancyStatus === "LACTATING") {
+    return {
+      requirement: null,
+      assumptions,
+      provenance,
+      warnings: [
+        "Lactation protein requirement is unavailable because lactation protein needs depend on lactation stage and Nourish does not currently collect postpartum duration.",
+      ],
+    };
+  }
+
+  if (ageMonths < 228) {
+    return {
+      requirement: null,
+      assumptions,
+      provenance,
+      warnings: [
+        "Protein requirement is currently unavailable for people under 19 years because Nourish has not yet implemented the WHO/FAO/UNU age-specific child and adolescent protein calculation method.",
+      ],
+    };
+  }
+
+  const targetAmount =
+    Math.round(
+      profile.weightKg *
+        faoWhoAdultProteinSafeLevelGramsPerKgPerDay *
+        100,
+    ) / 100;
+
+  return {
+    requirement: {
+      nutrientCode: "protein",
+      targetAmount,
+      unit: "g",
+      memberId: profile.memberId,
+    },
+    assumptions,
+    provenance,
+    warnings: [],
+  };
+}
+
 export function calculateMemberRequirements(
   profile: RequirementProfile,
   planDate: Date,
@@ -511,6 +609,29 @@ export function calculateMemberRequirements(
 
       continue;
     }
+    if (nutrientCode === "protein") {
+  const proteinResult = calculateProteinRequirement(
+    profile,
+    planDate,
+  );
+
+  warnings.push(...proteinResult.warnings);
+
+  assumptions = mergeAssumptions(
+    assumptions,
+    proteinResult.assumptions,
+  );
+
+  provenance.push(...proteinResult.provenance);
+
+  if (proteinResult.requirement) {
+    requirements.push(proteinResult.requirement);
+  } else {
+    unavailableNutrients.push("protein");
+  }
+
+  continue;
+}
 
     const result = findRequirementReference(
       profile,
@@ -591,6 +712,7 @@ export function toRequirementProfile(member: {
   dateOfBirth: Date;
   sex: Sex;
   pregnancyStatus: PregnancyStatus;
+  weightKg?: number | null;
 }): RequirementProfile {
   return {
     memberId: member.id,
@@ -598,5 +720,6 @@ export function toRequirementProfile(member: {
     dateOfBirth: member.dateOfBirth,
     sex: member.sex,
     pregnancyStatus: member.pregnancyStatus,
+    weightKg: member.weightKg ?? null,
   };
 }

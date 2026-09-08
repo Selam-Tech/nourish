@@ -4,6 +4,7 @@ import type { NutrientRequirement } from "@/types/optimization";
 export type RequirementReferenceType =
   | "EAR"
   | "RNI"
+  | "SAFE_INTAKE"
   | "CALCULATED"
   | "UNAVAILABLE";
 
@@ -27,6 +28,7 @@ export interface RequirementAssumptions {
   zincBioavailability?: ZincBioavailability;
   folateBasis?: "DFE";
   vitaminABasis?: "RE";
+  proteinBasis?: "SAFE_LEVEL_G_PER_KG";
   notes?: string[];
 }
 
@@ -41,6 +43,7 @@ export interface RequirementProfile {
   dateOfBirth: Date;
   sex: Sex;
   pregnancyStatus: PregnancyStatus;
+  weightKg?: number | null;
 }
 
 export interface RequirementReferenceRecord {
