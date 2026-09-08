@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateAgeInCompletedMonths,
+  calculateEnergyRequirement,
   calculateHouseholdRequirements,
   calculateIronRequirement,
   calculateMemberRequirements,
@@ -756,6 +757,199 @@ describe("calculateProteinRequirement", () => {
     expect(result.provenance[0].source).toBe("FAO_WHO_UNU");
     expect(result.provenance[0].referenceType).toBe(
       "SAFE_INTAKE",
+    );
+  });
+});
+
+describe("calculateEnergyRequirement", () => {
+  const planDate = new Date("2026-09-08T00:00:00.000Z");
+
+  it("calculates adult female energy using moderate PAL", () => {
+    const profile = createProfile({
+      memberId: "adult-female",
+      dateOfBirth: new Date("2000-01-01T00:00:00.000Z"),
+      sex: "FEMALE",
+      pregnancyStatus: "NOT_PREGNANT",
+      weightKg: 55,
+    });
+
+    const result = calculateEnergyRequirement(
+      profile,
+      planDate,
+      "MODERATE",
+    );
+
+    expect(result.requirement).toEqual({
+      nutrientCode: "energy",
+      targetAmount: 2408,
+      unit: "kcal",
+      memberId: "adult-female",
+    });
+
+    expect(result.assumptions.energyBasis).toBe("BMR_X_PAL");
+    expect(result.assumptions.physicalActivityLevel).toBe(
+      "MODERATE",
+    );
+    expect(result.assumptions.physicalActivityLevelValue).toBe(
+      1.85,
+    );
+  });
+
+  it("calculates adult male energy using moderate PAL", () => {
+    const profile = createProfile({
+      memberId: "adult-male",
+      dateOfBirth: new Date("2000-01-01T00:00:00.000Z"),
+      sex: "MALE",
+      pregnancyStatus: "NOT_APPLICABLE",
+      weightKg: 68,
+    });
+
+    const result = calculateEnergyRequirement(
+      profile,
+      planDate,
+      "MODERATE",
+    );
+
+    expect(result.requirement).toEqual({
+      nutrientCode: "energy",
+      targetAmount: 3175,
+      unit: "kcal",
+      memberId: "adult-male",
+    });
+  });
+
+  it("does not calculate energy without PAL", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+      sex: "MALE",
+      pregnancyStatus: "NOT_APPLICABLE",
+      weightKg: 70,
+    });
+
+    const result = calculateEnergyRequirement(
+      profile,
+      planDate,
+    );
+
+    expect(result.requirement).toBeNull();
+
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("no physical activity level"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not calculate energy without valid body weight", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+      sex: "MALE",
+      pregnancyStatus: "NOT_APPLICABLE",
+      weightKg: null,
+    });
+
+    const result = calculateEnergyRequirement(
+      profile,
+      planDate,
+      "MODERATE",
+    );
+
+    expect(result.requirement).toBeNull();
+
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("valid body weight"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not use the adult method for people under 18", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("2010-01-01T00:00:00.000Z"),
+      sex: "MALE",
+      pregnancyStatus: "NOT_APPLICABLE",
+      weightKg: 50,
+    });
+
+    const result = calculateEnergyRequirement(
+      profile,
+      planDate,
+      "MODERATE",
+    );
+
+    expect(result.requirement).toBeNull();
+
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("under 18 years"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not calculate pregnancy energy with the adult-only V1 method", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1995-01-01T00:00:00.000Z"),
+      sex: "FEMALE",
+      pregnancyStatus: "PREGNANT",
+      weightKg: 60,
+    });
+
+    const result = calculateEnergyRequirement(
+      profile,
+      planDate,
+      "MODERATE",
+    );
+
+    expect(result.requirement).toBeNull();
+
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("stage-specific energy"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not calculate lactation energy without postpartum stage", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1995-01-01T00:00:00.000Z"),
+      sex: "FEMALE",
+      pregnancyStatus: "LACTATING",
+      weightKg: 60,
+    });
+
+    const result = calculateEnergyRequirement(
+      profile,
+      planDate,
+      "MODERATE",
+    );
+
+    expect(result.requirement).toBeNull();
+
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("postpartum stage"),
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves FAO WHO UNU energy provenance", () => {
+    const profile = createProfile({
+      dateOfBirth: new Date("1990-01-01T00:00:00.000Z"),
+      sex: "MALE",
+      pregnancyStatus: "NOT_APPLICABLE",
+      weightKg: 70,
+    });
+
+    const result = calculateEnergyRequirement(
+      profile,
+      planDate,
+      "LIGHT",
+    );
+
+    expect(result.provenance).toHaveLength(1);
+    expect(result.provenance[0].source).toBe("FAO_WHO_UNU");
+    expect(result.provenance[0].referenceType).toBe(
+      "CALCULATED",
     );
   });
 });

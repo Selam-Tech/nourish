@@ -11,6 +11,13 @@ import {
 } from "../../../data/requirements/fao-who-protein-v1";
 
 import {
+  faoWhoAdultBmrEquations,
+  faoWhoEnergyProvenance,
+  nourishPhysicalActivityLevelValues,
+} from "../../../data/requirements/fao-who-energy-v1";
+
+
+import {
   faoWhoZincProvenance,
   faoWhoZincReferenceRows,
 } from "../../../data/requirements/fao-who-zinc-v1";
@@ -18,6 +25,7 @@ import type {
   CalculatedMemberRequirements,
   HouseholdRequirementResult,
   IronBioavailabilityPercent,
+  PhysicalActivityLevel,
   RequirementAssumptions,
   RequirementCalculationOptions,
   RequirementProfile,
@@ -34,6 +42,7 @@ const SUPPORTED_REFERENCE_NUTRIENTS = [
   "iron",
   "zinc",
   "protein",
+  "energy",
 ] as const;
 
 export function calculateAgeInCompletedMonths(
@@ -547,6 +556,139 @@ export function calculateProteinRequirement(
   };
 }
 
+export function calculateEnergyRequirement(
+  profile: RequirementProfile,
+  planDate: Date,
+  physicalActivityLevel?: PhysicalActivityLevel,
+): {
+  requirement: NutrientRequirement | null;
+  assumptions: RequirementAssumptions;
+  provenance: RequirementProvenance[];
+  warnings: string[];
+} {
+  const provenance = [faoWhoEnergyProvenance];
+
+  if (physicalActivityLevel === undefined) {
+    return {
+      requirement: null,
+      assumptions: {
+        energyBasis: "BMR_X_PAL",
+      },
+      provenance,
+      warnings: [
+        "Energy requirement is unavailable because no physical activity level was provided.",
+      ],
+    };
+  }
+
+  const palValue =
+    nourishPhysicalActivityLevelValues[physicalActivityLevel];
+
+  const assumptions: RequirementAssumptions = {
+    physicalActivityLevel,
+    physicalActivityLevelValue: palValue,
+    energyBasis: "BMR_X_PAL",
+    notes: [
+      `Energy modeled using a Nourish V1 ${physicalActivityLevel.toLowerCase()} activity assumption with PAL ${palValue} inside the FAO/WHO/UNU BMR × PAL framework.`,
+      "The PAL value is a modeling assumption and is not an individualized measurement of energy expenditure.",
+    ],
+  };
+
+  if (
+    profile.weightKg === undefined ||
+    profile.weightKg === null ||
+    !Number.isFinite(profile.weightKg) ||
+    profile.weightKg <= 0
+  ) {
+    return {
+      requirement: null,
+      assumptions,
+      provenance,
+      warnings: [
+        "Energy requirement is unavailable because a valid body weight is required.",
+      ],
+    };
+  }
+
+  const ageMonths = calculateAgeInCompletedMonths(
+    profile.dateOfBirth,
+    planDate,
+  );
+
+  if (ageMonths < 216) {
+    return {
+      requirement: null,
+      assumptions,
+      provenance,
+      warnings: [
+        "Energy requirement is currently unavailable for people under 18 years because FAO/WHO/UNU child and adolescent energy requirements use age-specific methods that Nourish has not yet implemented.",
+      ],
+    };
+  }
+
+  if (profile.pregnancyStatus === "PREGNANT") {
+    return {
+      requirement: null,
+      assumptions,
+      provenance,
+      warnings: [
+        "Pregnancy energy requirement is unavailable because pregnancy requires additional stage-specific energy modeling that Nourish does not currently implement.",
+      ],
+    };
+  }
+
+  if (profile.pregnancyStatus === "LACTATING") {
+    return {
+      requirement: null,
+      assumptions,
+      provenance,
+      warnings: [
+        "Lactation energy requirement is unavailable because lactation energy needs depend on postpartum stage and Nourish does not currently collect postpartum duration.",
+      ],
+    };
+  }
+
+  const ageYears = Math.floor(ageMonths / 12);
+
+  const equation = faoWhoAdultBmrEquations.find(
+    (candidate) =>
+      candidate.sex === profile.sex &&
+      ageYears >= candidate.minAgeYears &&
+      (candidate.maxAgeYears === null ||
+        ageYears <= candidate.maxAgeYears),
+  );
+
+  if (!equation) {
+    return {
+      requirement: null,
+      assumptions,
+      provenance,
+      warnings: [
+        "No verified FAO/WHO/UNU adult BMR equation could be matched to this profile.",
+      ],
+    };
+  }
+
+  const bmr =
+    equation.weightCoefficient * profile.weightKg +
+    equation.constant;
+
+  const targetAmount =
+    Math.round(bmr * palValue);
+
+  return {
+    requirement: {
+      nutrientCode: "energy",
+      targetAmount,
+      unit: "kcal",
+      memberId: profile.memberId,
+    },
+    assumptions,
+    provenance,
+    warnings: [],
+  };
+}
+
 export function calculateMemberRequirements(
   profile: RequirementProfile,
   planDate: Date,
@@ -628,6 +770,31 @@ export function calculateMemberRequirements(
     requirements.push(proteinResult.requirement);
   } else {
     unavailableNutrients.push("protein");
+  }
+
+  continue;
+}
+
+if (nutrientCode === "energy") {
+  const energyResult = calculateEnergyRequirement(
+    profile,
+    planDate,
+    options.physicalActivityLevel,
+  );
+
+  warnings.push(...energyResult.warnings);
+
+  assumptions = mergeAssumptions(
+    assumptions,
+    energyResult.assumptions,
+  );
+
+  provenance.push(...energyResult.provenance);
+
+  if (energyResult.requirement) {
+    requirements.push(energyResult.requirement);
+  } else {
+    unavailableNutrients.push("energy");
   }
 
   continue;

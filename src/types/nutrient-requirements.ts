@@ -1,4 +1,5 @@
 import type { PregnancyStatus, Sex } from "@prisma/client";
+
 import type { NutrientRequirement } from "@/types/optimization";
 
 export type RequirementReferenceType =
@@ -8,11 +9,21 @@ export type RequirementReferenceType =
   | "CALCULATED"
   | "UNAVAILABLE";
 
-export type RequirementSource = "FAO_WHO_GIFT" | "FAO_WHO_UNU";
+export type RequirementSource =
+  | "FAO_WHO_GIFT"
+  | "FAO_WHO_UNU";
 
 export type IronBioavailabilityPercent = 5 | 10 | 12 | 15;
 
-export type ZincBioavailability = "HIGH" | "MODERATE" | "LOW";
+export type ZincBioavailability =
+  | "HIGH"
+  | "MODERATE"
+  | "LOW";
+
+export type PhysicalActivityLevel =
+  | "LIGHT"
+  | "MODERATE"
+  | "VIGOROUS";
 
 export interface RequirementProvenance {
   source: RequirementSource;
@@ -29,12 +40,16 @@ export interface RequirementAssumptions {
   folateBasis?: "DFE";
   vitaminABasis?: "RE";
   proteinBasis?: "SAFE_LEVEL_G_PER_KG";
+  physicalActivityLevel?: PhysicalActivityLevel;
+  physicalActivityLevelValue?: number;
+  energyBasis?: "BMR_X_PAL";
   notes?: string[];
 }
 
 export interface RequirementCalculationOptions {
   ironBioavailabilityPercent?: IronBioavailabilityPercent;
   zincBioavailability?: ZincBioavailability;
+  physicalActivityLevel?: PhysicalActivityLevel;
 }
 
 export interface RequirementProfile {
