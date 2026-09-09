@@ -320,7 +320,196 @@ describe("calculateAge", () => {
 });
 
 describe("OptimizationService contract", () => {
-  it("throws not-implemented for optimize", async () => {
+  it("returns a real optimized result", async () => {
+    const { optimizationService } = await import(
+      "@/services/optimization/optimization-service"
+    );
+
+    const result = await optimizationService.optimize({
+      context: {
+        householdId: "test-household",
+        regionId: "test-region",
+        currency: "ETB",
+        members: [],
+      },
+
+      planDate: new Date("2026-09-09"),
+
+      budget: {
+        date: new Date("2026-09-09"),
+        amount: 100,
+        currency: "ETB",
+      },
+
+      pantry: [],
+
+      candidateFoods: [
+        {
+          foodId: "food-1",
+          canonicalId: "test-food-1",
+          nameEn: "Test Food",
+          nameAm: null,
+          foodGroup: "Test",
+          defaultUnit: "g",
+
+          nutrientsPer100g: {
+            energy: 200,
+            protein: 10,
+          },
+
+          price: {
+            amount: 100,
+            unit: "kg",
+            currency: "ETB",
+            observedAt: new Date(
+              "2026-09-08",
+            ),
+            sourceName:
+              "Synthetic test price",
+          },
+        },
+      ],
+
+      nutrientRequirements: [
+        {
+          nutrientCode: "energy",
+          targetAmount: 100,
+          unit: "kcal",
+          memberId: "member-1",
+        },
+        {
+          nutrientCode: "protein",
+          targetAmount: 5,
+          unit: "g",
+          memberId: "member-1",
+        },
+      ],
+
+      recentNutrientHistory: [],
+      excludedFoodIds: [],
+      optimizerVersion: "test-v1",
+    });
+
+    expect(result.status).toBe("success");
+
+    expect(result.currency).toBe("ETB");
+
+    expect(result.selections.length).toBeGreaterThan(
+      0,
+    );
+
+    expect(result.selections[0]).toMatchObject({
+      foodId: "food-1",
+      canonicalId: "test-food-1",
+      nameEn: "Test Food",
+      unit: "g",
+    });
+
+    expect(result.totalCost).toBeLessThanOrEqual(
+      100,
+    );
+
+    expect(
+      result.metadata.optimizerVersion,
+    ).toBe("test-v1");
+
+    expect(
+      result.metadata.objectiveScore,
+    ).toBeCloseTo(0, 6);
+
+    expect(
+      result.nutrientCoverage.every(
+        (nutrient) => !nutrient.isGap,
+      ),
+    ).toBe(true);
+
+    expect(result.unresolvedGaps).toHaveLength(
+      0,
+    );
+  });
+
+  it("returns partial when budget cannot meet the target", async () => {
+    const { optimizationService } = await import(
+      "@/services/optimization/optimization-service"
+    );
+
+    const result = await optimizationService.optimize({
+      context: {
+        householdId: "test-household",
+        regionId: "test-region",
+        currency: "ETB",
+        members: [],
+      },
+
+      planDate: new Date("2026-09-09"),
+
+      budget: {
+        date: new Date("2026-09-09"),
+        amount: 1,
+        currency: "ETB",
+      },
+
+      pantry: [],
+
+      candidateFoods: [
+        {
+          foodId: "food-1",
+          canonicalId: "test-food-1",
+          nameEn: "Test Food",
+          nameAm: null,
+          foodGroup: "Test",
+          defaultUnit: "g",
+
+          nutrientsPer100g: {
+            energy: 100,
+          },
+
+          price: {
+            amount: 100,
+            unit: "kg",
+            currency: "ETB",
+            observedAt: new Date(
+              "2026-09-08",
+            ),
+            sourceName:
+              "Synthetic test price",
+          },
+        },
+      ],
+
+      nutrientRequirements: [
+        {
+          nutrientCode: "energy",
+          targetAmount: 2000,
+          unit: "kcal",
+          memberId: "member-1",
+        },
+      ],
+
+      recentNutrientHistory: [],
+      excludedFoodIds: [],
+    });
+
+    expect(result.status).toBe("partial");
+
+    expect(result.totalCost).toBeLessThanOrEqual(
+      1,
+    );
+
+    expect(result.unresolvedGaps).toHaveLength(
+      1,
+    );
+
+    expect(
+      result.nutrientCoverage[0].isGap,
+    ).toBe(true);
+
+    expect(
+      result.metadata.objectiveScore,
+    ).toBeGreaterThan(0);
+  });
+
+  it("rejects optimization without nutrient requirements", async () => {
     const { optimizationService } = await import(
       "@/services/optimization/optimization-service"
     );
@@ -328,24 +517,29 @@ describe("OptimizationService contract", () => {
     await expect(
       optimizationService.optimize({
         context: {
-          householdId: "test",
-          regionId: null,
+          householdId: "test-household",
+          regionId: "test-region",
           currency: "ETB",
           members: [],
         },
-        planDate: new Date(),
+
+        planDate: new Date("2026-09-09"),
+
         budget: {
-          date: new Date(),
+          date: new Date("2026-09-09"),
           amount: 100,
           currency: "ETB",
         },
+
         pantry: [],
         candidateFoods: [],
         nutrientRequirements: [],
         recentNutrientHistory: [],
         excludedFoodIds: [],
       }),
-    ).rejects.toThrow("not yet implemented");
+    ).rejects.toThrow(
+      "No calculable nutrient requirements",
+    );
   });
 });
 
