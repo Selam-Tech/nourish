@@ -62,7 +62,10 @@ export async function updateHousehold(
   });
 }
 
-export async function addHouseholdMember(householdId: string, data: CreateMemberInput) {
+export async function addHouseholdMember(
+  householdId: string,
+  data: CreateMemberInput,
+) {
   return prisma.householdMember.create({
     data: {
       householdId,
@@ -70,6 +73,7 @@ export async function addHouseholdMember(householdId: string, data: CreateMember
       dateOfBirth: data.dateOfBirth,
       sex: data.sex,
       pregnancyStatus: data.pregnancyStatus,
+      weightKg: data.weightKg ?? null,
       allergies: data.allergies,
       dietaryRestrictions: data.dietaryRestrictions,
     },
@@ -84,10 +88,19 @@ export async function updateHouseholdMember(
     where: { id: memberId },
     data: {
       ...(data.name !== undefined && { name: data.name }),
-      ...(data.dateOfBirth !== undefined && { dateOfBirth: data.dateOfBirth }),
+      ...(data.dateOfBirth !== undefined && {
+        dateOfBirth: data.dateOfBirth,
+      }),
       ...(data.sex !== undefined && { sex: data.sex }),
-      ...(data.pregnancyStatus !== undefined && { pregnancyStatus: data.pregnancyStatus }),
-      ...(data.allergies !== undefined && { allergies: data.allergies }),
+      ...(data.pregnancyStatus !== undefined && {
+        pregnancyStatus: data.pregnancyStatus,
+      }),
+      ...(data.weightKg !== undefined && {
+        weightKg: data.weightKg,
+      }),
+      ...(data.allergies !== undefined && {
+        allergies: data.allergies,
+      }),
       ...(data.dietaryRestrictions !== undefined && {
         dietaryRestrictions: data.dietaryRestrictions,
       }),

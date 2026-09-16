@@ -1,12 +1,14 @@
 import type { Currency, PregnancyStatus, Sex } from "@prisma/client";
 
 /** Member profile used for nutrient requirement calculations */
+
 export interface MemberRequirementProfile {
   id: string;
   name: string;
   dateOfBirth: Date;
   sex: Sex;
   pregnancyStatus: PregnancyStatus;
+  weightKg: number | null;
   allergies: string[];
   dietaryRestrictions: string[];
 }
@@ -89,6 +91,7 @@ export interface OptimizedFoodSelection {
   foodId: string;
   canonicalId: string;
   nameEn: string;
+  nameAm: string | null;
   quantity: number;
   unit: string;
   unitCost: number;

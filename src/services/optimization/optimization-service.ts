@@ -129,13 +129,12 @@ export class DeterministicOptimizationService {
           }
 
           return {
-            foodId: selection.foodId,
-            canonicalId:
-              candidate.canonicalId,
-            nameEn: candidate.nameEn,
-            quantity:
-              selection.quantityGrams,
-            unit: "g",
+  foodId: selection.foodId,
+  canonicalId: candidate.canonicalId,
+  nameEn: candidate.nameEn,
+  nameAm: candidate.nameAm,
+  quantity: selection.quantityGrams,
+  unit: "g",
             unitCost:
               selection.quantityGrams > 0
                 ? selection.totalCostEtb /

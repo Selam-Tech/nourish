@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, FormField, inputClassName, selectClassName } from "@/components/ui";
+import {
+  Button,
+  FormField,
+  inputClassName,
+  selectClassName,
+} from "@/components/ui";
 
 interface MemberFormProps {
   householdId: string;
@@ -12,20 +17,38 @@ interface MemberFormProps {
     dateOfBirth: string;
     sex: string;
     pregnancyStatus: string;
+    weightKg: number | null;
     allergies: string[];
     dietaryRestrictions: string[];
   };
   onDone?: () => void;
 }
 
-export function MemberForm({ householdId, member, onDone }: MemberFormProps) {
+export function MemberForm({
+  householdId,
+  member,
+  onDone,
+}: MemberFormProps) {
   const router = useRouter();
+
   const [name, setName] = useState(member?.name ?? "");
-  const [dateOfBirth, setDateOfBirth] = useState(member?.dateOfBirth?.slice(0, 10) ?? "");
+  const [dateOfBirth, setDateOfBirth] = useState(
+    member?.dateOfBirth?.slice(0, 10) ?? "",
+  );
   const [sex, setSex] = useState(member?.sex ?? "UNSPECIFIED");
-  const [pregnancyStatus, setPregnancyStatus] = useState(member?.pregnancyStatus ?? "NOT_APPLICABLE");
-  const [allergies, setAllergies] = useState(member?.allergies.join(", ") ?? "");
-  const [restrictions, setRestrictions] = useState(member?.dietaryRestrictions.join(", ") ?? "");
+  const [pregnancyStatus, setPregnancyStatus] = useState(
+    member?.pregnancyStatus ?? "NOT_APPLICABLE",
+  );
+  const [weightKg, setWeightKg] = useState(
+    member?.weightKg != null ? String(member.weightKg) : "",
+  );
+  const [allergies, setAllergies] = useState(
+    member?.allergies.join(", ") ?? "",
+  );
+  const [restrictions, setRestrictions] = useState(
+    member?.dietaryRestrictions.join(", ") ?? "",
+  );
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,22 +57,44 @@ export function MemberForm({ householdId, member, onDone }: MemberFormProps) {
     setLoading(true);
     setError(null);
 
+    const parsedWeight =
+      weightKg.trim() === "" ? null : Number(weightKg);
+
+    if (
+      parsedWeight !== null &&
+      (!Number.isFinite(parsedWeight) || parsedWeight <= 0)
+    ) {
+      setError("Weight must be greater than 0 kg.");
+      setLoading(false);
+      return;
+    }
+
     const payload = {
       name,
       dateOfBirth,
       sex,
       pregnancyStatus,
-      allergies: allergies.split(",").map((s) => s.trim()).filter(Boolean),
-      dietaryRestrictions: restrictions.split(",").map((s) => s.trim()).filter(Boolean),
+      weightKg: parsedWeight,
+      allergies: allergies
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+      dietaryRestrictions: restrictions
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
     };
 
     try {
       const url = member
         ? `/api/household/${householdId}/members/${member.id}`
         : `/api/household/${householdId}/members`;
+
       const res = await fetch(url, {
         method: member ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(payload),
       });
 
@@ -61,7 +106,11 @@ export function MemberForm({ householdId, member, onDone }: MemberFormProps) {
       router.refresh();
       onDone?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong",
+      );
     } finally {
       setLoading(false);
     }
@@ -78,6 +127,7 @@ export function MemberForm({ householdId, member, onDone }: MemberFormProps) {
           required
         />
       </FormField>
+
       <FormField label="Date of birth" htmlFor="dob">
         <input
           id="dob"
@@ -89,28 +139,64 @@ export function MemberForm({ householdId, member, onDone }: MemberFormProps) {
           max={new Date().toISOString().slice(0, 10)}
         />
       </FormField>
+
       <FormField label="Sex" htmlFor="sex">
-        <select id="sex" className={selectClassName} value={sex} onChange={(e) => setSex(e.target.value)}>
+        <select
+          id="sex"
+          className={selectClassName}
+          value={sex}
+          onChange={(e) => setSex(e.target.value)}
+        >
           <option value="UNSPECIFIED">Prefer not to say</option>
           <option value="MALE">Male</option>
           <option value="FEMALE">Female</option>
           <option value="OTHER">Other</option>
         </select>
       </FormField>
-      <FormField label="Pregnancy / lactation" htmlFor="pregnancy">
+
+      <FormField
+        label="Weight (kg)"
+        htmlFor="weight"
+        hint="Optional. Used when a verified requirement calculation needs body weight."
+      >
+        <input
+          id="weight"
+          type="number"
+          min="0.1"
+          step="0.1"
+          className={inputClassName}
+          value={weightKg}
+          onChange={(e) => setWeightKg(e.target.value)}
+          placeholder="e.g. 70"
+        />
+      </FormField>
+
+      <FormField
+        label="Pregnancy / lactation"
+        htmlFor="pregnancy"
+      >
         <select
           id="pregnancy"
           className={selectClassName}
           value={pregnancyStatus}
           onChange={(e) => setPregnancyStatus(e.target.value)}
         >
-          <option value="NOT_APPLICABLE">Not applicable</option>
-          <option value="NOT_PREGNANT">Not pregnant</option>
+          <option value="NOT_APPLICABLE">
+            Not applicable
+          </option>
+          <option value="NOT_PREGNANT">
+            Not pregnant
+          </option>
           <option value="PREGNANT">Pregnant</option>
           <option value="LACTATING">Lactating</option>
         </select>
       </FormField>
-      <FormField label="Allergies" htmlFor="allergies" hint="Comma-separated">
+
+      <FormField
+        label="Allergies"
+        htmlFor="allergies"
+        hint="Comma-separated"
+      >
         <input
           id="allergies"
           className={inputClassName}
@@ -119,7 +205,12 @@ export function MemberForm({ householdId, member, onDone }: MemberFormProps) {
           placeholder="e.g. peanuts, dairy"
         />
       </FormField>
-      <FormField label="Dietary restrictions" htmlFor="restrictions" hint="Comma-separated">
+
+      <FormField
+        label="Dietary restrictions"
+        htmlFor="restrictions"
+        hint="Comma-separated"
+      >
         <input
           id="restrictions"
           className={inputClassName}
@@ -128,13 +219,31 @@ export function MemberForm({ householdId, member, onDone }: MemberFormProps) {
           placeholder="e.g. vegetarian, halal"
         />
       </FormField>
-      {error && <p className="text-sm" style={{ color: "var(--color-critical)" }}>{error}</p>}
+
+      {error && (
+        <p
+          className="text-sm"
+          style={{ color: "var(--color-critical)" }}
+        >
+          {error}
+        </p>
+      )}
+
       <div className="flex gap-2">
         <Button type="submit" disabled={loading}>
-          {loading ? "Saving…" : member ? "Update member" : "Add member"}
+          {loading
+            ? "Saving…"
+            : member
+              ? "Update member"
+              : "Add member"}
         </Button>
+
         {onDone && (
-          <Button type="button" variant="ghost" onClick={onDone}>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onDone}
+          >
             Cancel
           </Button>
         )}
@@ -151,35 +260,61 @@ interface MemberListProps {
     dateOfBirth: Date;
     sex: string;
     pregnancyStatus: string;
+    weightKg: number | null;
     allergies: string[];
     dietaryRestrictions: string[];
   }>;
 }
 
-export function MemberList({ householdId, members }: MemberListProps) {
+export function MemberList({
+  householdId,
+  members,
+}: MemberListProps) {
   const router = useRouter();
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingId, setEditingId] =
+    useState<string | null>(null);
 
   async function handleRemove(memberId: string) {
-    if (!confirm("Remove this member?")) return;
-    await fetch(`/api/household/${householdId}/members/${memberId}`, { method: "DELETE" });
+    if (!confirm("Remove this member?")) {
+      return;
+    }
+
+    await fetch(
+      `/api/household/${householdId}/members/${memberId}`,
+      {
+        method: "DELETE",
+      },
+    );
+
     router.refresh();
   }
 
   if (members.length === 0) {
-    return <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>No members yet.</p>;
+    return (
+      <p
+        className="text-sm"
+        style={{ color: "var(--color-text-muted)" }}
+      >
+        No members yet.
+      </p>
+    );
   }
 
   return (
     <ul className="space-y-4">
       {members.map((member) => (
-        <li key={member.id} className="rounded-lg border border-[var(--color-border)] p-4">
+        <li
+          key={member.id}
+          className="rounded-lg border border-[var(--color-border)] p-4"
+        >
           {editingId === member.id ? (
             <MemberForm
               householdId={householdId}
               member={{
                 ...member,
-                dateOfBirth: new Date(member.dateOfBirth).toISOString(),
+                dateOfBirth: new Date(
+                  member.dateOfBirth,
+                ).toISOString(),
               }}
               onDone={() => setEditingId(null)}
             />
@@ -187,24 +322,70 @@ export function MemberList({ householdId, members }: MemberListProps) {
             <div>
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="font-medium">{member.name}</p>
-                  <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
-                    Born {new Date(member.dateOfBirth).toLocaleDateString()} · {member.sex.toLowerCase()}
-                    {member.pregnancyStatus !== "NOT_APPLICABLE" &&
-                      ` · ${member.pregnancyStatus.toLowerCase().replace("_", " ")}`}
+                  <p className="font-medium">
+                    {member.name}
                   </p>
-                  {member.allergies.length > 0 && (
-                    <p className="mt-1 text-xs">Allergies: {member.allergies.join(", ")}</p>
+
+                  <p
+                    className="text-sm"
+                    style={{
+                      color: "var(--color-text-muted)",
+                    }}
+                  >
+                    Born{" "}
+                    {new Date(
+                      member.dateOfBirth,
+                    ).toLocaleDateString()}{" "}
+                    · {member.sex.toLowerCase()}
+                    {member.pregnancyStatus !==
+                      "NOT_APPLICABLE" &&
+                      ` · ${member.pregnancyStatus
+                        .toLowerCase()
+                        .replace("_", " ")}`}
+                  </p>
+
+                  {member.weightKg != null && (
+                    <p className="mt-1 text-xs">
+                      Weight: {member.weightKg} kg
+                    </p>
                   )}
-                  {member.dietaryRestrictions.length > 0 && (
-                    <p className="text-xs">Restrictions: {member.dietaryRestrictions.join(", ")}</p>
+
+                  {member.allergies.length > 0 && (
+                    <p className="mt-1 text-xs">
+                      Allergies:{" "}
+                      {member.allergies.join(", ")}
+                    </p>
+                  )}
+
+                  {member.dietaryRestrictions.length >
+                    0 && (
+                    <p className="text-xs">
+                      Restrictions:{" "}
+                      {member.dietaryRestrictions.join(
+                        ", ",
+                      )}
+                    </p>
                   )}
                 </div>
+
                 <div className="flex gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => setEditingId(member.id)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      setEditingId(member.id)
+                    }
+                  >
                     Edit
                   </Button>
-                  <Button size="sm" variant="danger" onClick={() => handleRemove(member.id)}>
+
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() =>
+                      handleRemove(member.id)
+                    }
+                  >
                     Remove
                   </Button>
                 </div>

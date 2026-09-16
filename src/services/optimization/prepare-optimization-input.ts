@@ -1,22 +1,46 @@
 import type { OptimizationInput } from "@/types/optimization";
 import type { Prisma } from "@prisma/client";
 
+import {
+  calculateHouseholdRequirements,
+  toRequirementProfile,
+} from "@/services/nutrition/requirement-service";
+
+import { loadCandidateFoods } from "@/services/optimization/candidate-food-loader";
+
 /**
  * Builds the OptimizationInput structure from persisted household data.
- * Does NOT run optimization — prepares the contract for the future engine.
+ *
+ * This function prepares real household data for the deterministic
+ * scarcity optimizer.
+ *
+ * Important:
+ * - Nutrient requirements come from the verified requirement engine.
+ * - Missing scientific/modeling inputs are NOT silently invented.
+ * - Pantry is loaded but is not yet applied by the scarcity solver.
+ * - Nutrient Memory is loaded but is not yet applied by the solver.
  */
 export async function buildOptimizationInput(
   householdId: string,
   planDate: Date,
-): Promise<{ input: Partial<OptimizationInput>; readiness: OptimizationReadiness }> {
+): Promise<{
+  input: Partial<OptimizationInput>;
+  readiness: OptimizationReadiness;
+}> {
   const { prisma } = await import("@/lib/db");
 
   const household = await prisma.household.findUnique({
     where: { id: householdId },
     include: {
-      members: { where: { isActive: true } },
-      pantryItems: { include: { food: true } },
-      dailyBudgets: { where: { date: planDate } },
+      members: {
+        where: { isActive: true },
+      },
+      pantryItems: {
+        include: { food: true },
+      },
+      dailyBudgets: {
+        where: { date: planDate },
+      },
       nutrientHistory: {
         orderBy: { recordDate: "desc" },
         take: 30,
@@ -30,38 +54,65 @@ export async function buildOptimizationInput(
   }
 
   const budget = household.dailyBudgets[0];
-  const foods = await prisma.food.findMany({
-    where: { isActive: true },
-    include: {
-      nutrients: { include: { nutrient: true } },
-      prices: household.regionId
-        ? {
-            where: { regionId: household.regionId },
-            orderBy: { observedAt: "desc" },
-            take: 1,
-          }
-        : false,
-    },
-  });
 
-  const readiness = assessReadiness(household, budget, foods);
+  const requirementProfiles = household.members.map((member) =>
+    toRequirementProfile(member),
+  );
+
+  /**
+   * We intentionally do not provide:
+   * - physicalActivityLevel
+   * - ironBioavailabilityPercent
+   * - zincBioavailability
+   *
+   * until the household explicitly supplies or accepts those assumptions.
+   *
+   * The requirement service will therefore return only requirements
+   * supported by the data currently available.
+   */
+  const householdRequirements = calculateHouseholdRequirements(
+    requirementProfiles,
+    planDate,
+  );
+
+  const candidateFoods = household.regionId
+    ? await loadCandidateFoods({
+        regionId: household.regionId,
+        currency: household.currency,
+        asOfDate: planDate,
+      })
+    : [];
+
+  const readiness = assessReadiness({
+    memberCount: household.members.length,
+    hasBudget: Boolean(budget),
+    regionId: household.regionId,
+    candidateFoodCount: candidateFoods.length,
+    pricedFoodCount: candidateFoods.filter((food) => food.price !== null).length,
+    nutrientRequirementCount:
+      householdRequirements.optimizerRequirements.length,
+    requirementWarnings: householdRequirements.warnings,
+  });
 
   const input: Partial<OptimizationInput> = {
     context: {
       householdId: household.id,
       regionId: household.regionId,
       currency: household.currency,
-      members: household.members.map((m) => ({
-        id: m.id,
-        name: m.name,
-        dateOfBirth: m.dateOfBirth,
-        sex: m.sex,
-        pregnancyStatus: m.pregnancyStatus,
-        allergies: m.allergies,
-        dietaryRestrictions: m.dietaryRestrictions,
+      members: household.members.map((member) => ({
+        id: member.id,
+        name: member.name,
+        dateOfBirth: member.dateOfBirth,
+        sex: member.sex,
+        pregnancyStatus: member.pregnancyStatus,
+        weightKg: member.weightKg,
+        allergies: member.allergies,
+        dietaryRestrictions: member.dietaryRestrictions,
       })),
     },
+
     planDate,
+
     budget: budget
       ? {
           date: budget.date,
@@ -69,45 +120,34 @@ export async function buildOptimizationInput(
           currency: budget.currency,
         }
       : undefined,
-    pantry: household.pantryItems.map((p) => ({
-      foodId: p.foodId,
-      quantity: p.quantity,
-      unit: p.unit,
+
+    pantry: household.pantryItems.map((item) => ({
+      foodId: item.foodId,
+      quantity: item.quantity,
+      unit: item.unit,
     })),
-    candidateFoods: foods.map((f) => ({
-      foodId: f.id,
-      canonicalId: f.canonicalId,
-      nameEn: f.nameEn,
-      nameAm: f.nameAm,
-      foodGroup: f.foodGroup,
-      defaultUnit: f.defaultUnit,
-      nutrientsPer100g: Object.fromEntries(
-        f.nutrients.map((n) => [n.nutrient.code, n.amountPer100g]),
-      ),
-      price:
-        Array.isArray(f.prices) && f.prices[0]
-          ? {
-              amount: Number(f.prices[0].price),
-              unit: f.prices[0].unit,
-              currency: f.prices[0].currency,
-              observedAt: f.prices[0].observedAt,
-              sourceName: f.prices[0].sourceName,
-            }
-          : null,
+
+    candidateFoods,
+
+    nutrientRequirements:
+      householdRequirements.optimizerRequirements,
+
+    recentNutrientHistory: household.nutrientHistory.map((history) => ({
+      nutrientCode: history.nutrient.code,
+      recordDate: history.recordDate,
+      targetAmount: history.targetAmount,
+      actualAmount: history.actualAmount,
+      coverageRatio: history.coverageRatio,
+      unit: history.unit,
     })),
-    recentNutrientHistory: household.nutrientHistory.map((h) => ({
-      nutrientCode: h.nutrient.code,
-      recordDate: h.recordDate,
-      targetAmount: h.targetAmount,
-      actualAmount: h.actualAmount,
-      coverageRatio: h.coverageRatio,
-      unit: h.unit,
-    })),
+
     excludedFoodIds: [],
-    nutrientRequirements: [],
   };
 
-  return { input, readiness };
+  return {
+    input,
+    readiness,
+  };
 }
 
 export interface OptimizationReadiness {
@@ -116,29 +156,55 @@ export interface OptimizationReadiness {
   warnings: string[];
 }
 
+interface ReadinessInput {
+  memberCount: number;
+  hasBudget: boolean;
+  regionId: string | null;
+  candidateFoodCount: number;
+  pricedFoodCount: number;
+  nutrientRequirementCount: number;
+  requirementWarnings: string[];
+}
+
 function assessReadiness(
-  household: {
-    members: unknown[];
-    regionId: string | null;
-  },
-  budget: unknown,
-  foods: unknown[],
+  input: ReadinessInput,
 ): OptimizationReadiness {
   const blockers: string[] = [];
   const warnings: string[] = [];
 
-  if (household.members.length === 0) {
+  if (input.memberCount === 0) {
     blockers.push("No household members defined");
   }
-  if (!budget) {
+
+  if (!input.hasBudget) {
     blockers.push("No daily budget set for the plan date");
   }
-  if (foods.length === 0) {
-    blockers.push("Food database is empty — import authoritative food data first");
+
+  if (!input.regionId) {
+    blockers.push(
+      "No region set — regional food prices are required for optimization",
+    );
   }
-  if (!household.regionId) {
-    warnings.push("No region set — regional prices may be unavailable");
+
+  if (input.candidateFoodCount === 0) {
+    blockers.push(
+      "No candidate foods with nutrition data are available for this region",
+    );
   }
+
+  if (input.pricedFoodCount === 0) {
+    blockers.push(
+      "No priced foods are available for the selected region and plan date",
+    );
+  }
+
+  if (input.nutrientRequirementCount === 0) {
+    blockers.push(
+      "No verified nutrient requirements could be calculated for the household",
+    );
+  }
+
+  warnings.push(...input.requirementWarnings);
 
   return {
     isReady: blockers.length === 0,
@@ -151,22 +217,36 @@ export async function createPendingMealPlan(
   householdId: string,
   planDate: Date,
   dailyBudgetId?: string,
-): Promise<{ mealPlanId: string; calculationMeta: Prisma.JsonValue }> {
+): Promise<{
+  mealPlanId: string;
+  calculationMeta: Prisma.JsonValue;
+}> {
   const { prisma } = await import("@/lib/db");
-  const { input, readiness } = await buildOptimizationInput(householdId, planDate);
+
+  const { input, readiness } = await buildOptimizationInput(
+    householdId,
+    planDate,
+  );
 
   const calculationMeta = {
-   readiness: {
-  isReady: readiness.isReady,
-  blockers: readiness.blockers,
-  warnings: readiness.warnings,
-},
+    readiness: {
+      isReady: readiness.isReady,
+      blockers: readiness.blockers,
+      warnings: readiness.warnings,
+    },
+
     inputSnapshot: {
       memberCount: input.context?.members.length ?? 0,
       pantryItemCount: input.pantry?.length ?? 0,
       candidateFoodCount: input.candidateFoods?.length ?? 0,
+      pricedFoodCount:
+        input.candidateFoods?.filter((food) => food.price !== null)
+          .length ?? 0,
+      nutrientRequirementCount:
+        input.nutrientRequirements?.length ?? 0,
       budgetAmount: input.budget?.amount ?? null,
     },
+
     preparedAt: new Date().toISOString(),
   } satisfies Prisma.InputJsonObject;
 
@@ -181,5 +261,8 @@ export async function createPendingMealPlan(
     },
   });
 
-  return { mealPlanId: mealPlan.id, calculationMeta: mealPlan.calculationMeta };
+  return {
+    mealPlanId: mealPlan.id,
+    calculationMeta: mealPlan.calculationMeta,
+  };
 }

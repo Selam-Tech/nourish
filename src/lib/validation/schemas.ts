@@ -10,15 +10,37 @@ export const updateHouseholdSchema = createHouseholdSchema.partial();
 
 export const createMemberSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
-  dateOfBirth: z.coerce.date().max(new Date(), "Date of birth cannot be in the future"),
-  sex: z.enum(["MALE", "FEMALE", "OTHER", "UNSPECIFIED"]).default("UNSPECIFIED"),
-  pregnancyStatus: z
-    .enum(["NOT_APPLICABLE", "NOT_PREGNANT", "PREGNANT", "LACTATING"])
-    .default("NOT_APPLICABLE"),
-  allergies: z.array(z.string().max(100)).default([]),
-  dietaryRestrictions: z.array(z.string().max(100)).default([]),
-});
 
+  dateOfBirth: z.coerce
+    .date()
+    .max(new Date(), "Date of birth cannot be in the future"),
+
+  sex: z
+    .enum(["MALE", "FEMALE", "OTHER", "UNSPECIFIED"])
+    .default("UNSPECIFIED"),
+
+  pregnancyStatus: z
+    .enum([
+      "NOT_APPLICABLE",
+      "NOT_PREGNANT",
+      "PREGNANT",
+      "LACTATING",
+    ])
+    .default("NOT_APPLICABLE"),
+
+  weightKg: z
+    .number()
+    .positive("Weight must be greater than 0 kg")
+    .max(500, "Weight must be 500 kg or less")
+    .nullable()
+    .optional(),
+
+  allergies: z.array(z.string().max(100)).default([]),
+
+  dietaryRestrictions: z
+    .array(z.string().max(100))
+    .default([]),
+});
 export const updateMemberSchema = createMemberSchema.partial();
 
 export const createPantryItemSchema = z.object({
