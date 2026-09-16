@@ -278,14 +278,132 @@ export class DeterministicOptimizationService {
   }
 
   async calculateMarginalValue(
-    query: MarginalValueQuery,
-  ): Promise<MarginalValueResult> {
-    void query;
-
+  query: MarginalValueQuery,
+): Promise<MarginalValueResult> {
+  if (
+    !Number.isFinite(query.additionalBudget) ||
+    query.additionalBudget <= 0
+  ) {
     throw new Error(
-      "Marginal Nutrition Value is not implemented yet.",
+      "Additional budget must be greater than zero.",
     );
   }
+
+  const baseline =
+    await this.optimize(query.input);
+
+  const increasedBudgetInput: OptimizationInput = {
+    ...query.input,
+    budget: {
+      ...query.input.budget,
+      amount:
+        query.input.budget.amount +
+        query.additionalBudget,
+    },
+  };
+
+  const improved =
+    await this.optimize(
+      increasedBudgetInput,
+    );
+
+  const baselineCoverage = new Map(
+    baseline.nutrientCoverage.map(
+      (nutrient) => [
+        nutrient.nutrientCode,
+        nutrient,
+      ],
+    ),
+  );
+
+  const improvedNutrients =
+    improved.nutrientCoverage
+      .map((nutrient) => {
+        const previous =
+          baselineCoverage.get(
+            nutrient.nutrientCode,
+          );
+
+        const previousAmount =
+          previous?.actualAmount ?? 0;
+
+        return {
+          nutrientCode:
+            nutrient.nutrientCode,
+
+          additionalAmount: Math.max(
+            0,
+            nutrient.actualAmount -
+              previousAmount,
+          ),
+
+          unit: nutrient.unit,
+        };
+      })
+      .filter(
+        (nutrient) =>
+          nutrient.additionalAmount >
+          GAP_EPSILON,
+      );
+
+  const baselineSelections = new Map<
+    string,
+    number
+  >();
+
+  for (const selection of baseline.selections) {
+    const key =
+      `${selection.source}:${selection.foodId}`;
+
+    baselineSelections.set(
+      key,
+      (baselineSelections.get(key) ?? 0) +
+        selection.quantity,
+    );
+  }
+
+  const recommendedFoodAdditions:
+    OptimizedFoodSelection[] = [];
+
+  for (const selection of improved.selections) {
+    const key =
+      `${selection.source}:${selection.foodId}`;
+
+    const previousQuantity =
+      baselineSelections.get(key) ?? 0;
+
+    const additionalQuantity =
+      selection.quantity -
+      previousQuantity;
+
+    if (
+      additionalQuantity <=
+      GAP_EPSILON
+    ) {
+      continue;
+    }
+
+    recommendedFoodAdditions.push({
+      ...selection,
+
+      quantity:
+        additionalQuantity,
+
+      totalCost:
+        selection.unitCost *
+        additionalQuantity,
+    });
+  }
+
+  return {
+    additionalBudget:
+      query.additionalBudget,
+
+    improvedNutrients,
+
+    recommendedFoodAdditions,
+  };
+}
 
   async analyzeAffordabilityGaps(
     input: AffordabilityGapInput,

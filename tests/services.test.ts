@@ -394,20 +394,22 @@ describe("OptimizationService contract", () => {
 
     expect(result.currency).toBe("ETB");
 
-    expect(result.selections.length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      result.selections.length,
+    ).toBeGreaterThan(0);
 
-    expect(result.selections[0]).toMatchObject({
+    expect(
+      result.selections[0],
+    ).toMatchObject({
       foodId: "food-1",
       canonicalId: "test-food-1",
       nameEn: "Test Food",
       unit: "g",
     });
 
-    expect(result.totalCost).toBeLessThanOrEqual(
-      100,
-    );
+    expect(
+      result.totalCost,
+    ).toBeLessThanOrEqual(100);
 
     expect(
       result.metadata.optimizerVersion,
@@ -423,9 +425,9 @@ describe("OptimizationService contract", () => {
       ),
     ).toBe(true);
 
-    expect(result.unresolvedGaps).toHaveLength(
-      0,
-    );
+    expect(
+      result.unresolvedGaps,
+    ).toHaveLength(0);
   });
 
   it("returns partial when budget cannot meet the target", async () => {
@@ -492,13 +494,13 @@ describe("OptimizationService contract", () => {
 
     expect(result.status).toBe("partial");
 
-    expect(result.totalCost).toBeLessThanOrEqual(
-      1,
-    );
+    expect(
+      result.totalCost,
+    ).toBeLessThanOrEqual(1);
 
-    expect(result.unresolvedGaps).toHaveLength(
-      1,
-    );
+    expect(
+      result.unresolvedGaps,
+    ).toHaveLength(1);
 
     expect(
       result.nutrientCoverage[0].isGap,
@@ -541,6 +543,217 @@ describe("OptimizationService contract", () => {
       "No calculable nutrient requirements",
     );
   });
+
+  it("calculates marginal nutrition value from additional budget", async () => {
+    const { optimizationService } = await import(
+      "@/services/optimization/optimization-service"
+    );
+
+    const { type: _unused, ...nothing } = {} as {
+      type?: never;
+    };
+    void _unused;
+    void nothing;
+
+    const input: import("@/types/optimization").OptimizationInput =
+      {
+        context: {
+          householdId: "test-household",
+          regionId: "test-region",
+          currency: "ETB",
+          members: [],
+        },
+
+        planDate: new Date("2026-09-09"),
+
+        budget: {
+          date: new Date("2026-09-09"),
+          amount: 10,
+          currency: "ETB",
+        },
+
+        pantry: [],
+
+        candidateFoods: [
+          {
+            foodId: "food-1",
+            canonicalId: "test-food-1",
+            nameEn: "Test Lentil",
+            nameAm: null,
+            foodGroup: "Legumes",
+            defaultUnit: "g",
+
+            nutrientsPer100g: {
+              protein: 20,
+            },
+
+            price: {
+              amount: 100,
+              unit: "kg",
+              currency: "ETB",
+              observedAt: new Date(
+                "2026-09-08",
+              ),
+              sourceName:
+                "Synthetic test price",
+            },
+          },
+        ],
+
+        nutrientRequirements: [
+          {
+            nutrientCode: "protein",
+            targetAmount: 100,
+            unit: "g",
+            memberId: "member-1",
+          },
+        ],
+
+        recentNutrientHistory: [],
+        excludedFoodIds: [],
+        optimizerVersion: "test-v1",
+      };
+
+    const result =
+      await optimizationService.calculateMarginalValue({
+        input,
+        additionalBudget: 10,
+      });
+
+    expect(
+      result.additionalBudget,
+    ).toBe(10);
+
+    expect(
+      result.improvedNutrients.length,
+    ).toBeGreaterThan(0);
+
+    expect(
+      result.improvedNutrients[0],
+    ).toMatchObject({
+      nutrientCode: "protein",
+      unit: "g",
+    });
+
+    expect(
+      result.improvedNutrients[0]
+        .additionalAmount,
+    ).toBeGreaterThan(0);
+
+    expect(
+      result.recommendedFoodAdditions.length,
+    ).toBeGreaterThan(0);
+
+    expect(
+      result.recommendedFoodAdditions.every(
+        (selection) =>
+          selection.source === "purchase",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects zero or negative additional budget", async () => {
+    const { optimizationService } = await import(
+      "@/services/optimization/optimization-service"
+    );
+
+    const invalidQuery = {
+      input: {} as never,
+      additionalBudget: 0,
+    };
+
+    await expect(
+      optimizationService.calculateMarginalValue(
+        invalidQuery,
+      ),
+    ).rejects.toThrow(
+      "Additional budget must be greater than zero.",
+    );
+  });
+
+  it("does not recommend pantry food as an extra-budget purchase", async () => {
+    const { optimizationService } = await import(
+      "@/services/optimization/optimization-service"
+    );
+
+    const input: import("@/types/optimization").OptimizationInput =
+      {
+        context: {
+          householdId: "test-household",
+          regionId: "test-region",
+          currency: "ETB",
+          members: [],
+        },
+
+        planDate: new Date("2026-09-09"),
+
+        budget: {
+          date: new Date("2026-09-09"),
+          amount: 0,
+          currency: "ETB",
+        },
+
+        pantry: [
+          {
+            foodId: "food-1",
+            quantity: 50,
+            unit: "g",
+          },
+        ],
+
+        candidateFoods: [
+          {
+            foodId: "food-1",
+            canonicalId: "test-food-1",
+            nameEn: "Test Lentil",
+            nameAm: null,
+            foodGroup: "Legumes",
+            defaultUnit: "g",
+
+            nutrientsPer100g: {
+              protein: 20,
+            },
+
+            price: {
+              amount: 100,
+              unit: "kg",
+              currency: "ETB",
+              observedAt: new Date(
+                "2026-09-08",
+              ),
+              sourceName:
+                "Synthetic test price",
+            },
+          },
+        ],
+
+        nutrientRequirements: [
+          {
+            nutrientCode: "protein",
+            targetAmount: 20,
+            unit: "g",
+            memberId: "member-1",
+          },
+        ],
+
+        recentNutrientHistory: [],
+        excludedFoodIds: [],
+        optimizerVersion: "test-v1",
+      };
+
+    const result =
+      await optimizationService.calculateMarginalValue({
+        input,
+        additionalBudget: 10,
+      });
+
+    expect(
+      result.recommendedFoodAdditions.every(
+        (selection) =>
+          selection.source === "purchase",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("AIService contract", () => {
@@ -556,6 +769,7 @@ describe("AIService contract", () => {
       }),
     ).rejects.toThrow("not configured");
   });
+  
 });
 
 describe(
