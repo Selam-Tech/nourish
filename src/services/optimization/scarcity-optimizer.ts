@@ -6,12 +6,34 @@ export interface ScarcityNutrientTarget {
   weight?: number;
 }
 
+export type ScarcityFoodSource =
+  | "pantry"
+  | "purchase";
+
 export interface ScarcityFood {
+  /**
+   * Unique mathematical variable ID.
+   *
+   * The same database food may appear as:
+   * pantry:<foodId>
+   * purchase:<foodId>
+   */
+  variableId: string;
+
+  /**
+   * Real Food database ID.
+   */
   foodId: string;
+
+  source: ScarcityFoodSource;
+
   name: string;
 
   /**
-   * Purchase cost in ETB per gram.
+   * Additional purchase cost in ETB per gram.
+   *
+   * Pantry inventory may legitimately have cost 0
+   * because the household already owns it.
    */
   pricePerGram: number;
 
@@ -21,7 +43,7 @@ export interface ScarcityFood {
   nutrientsPer100g: Record<string, number>;
 
   /**
-   * Maximum amount the mathematical model may select.
+   * Maximum amount this mathematical variable may use.
    *
    * This is a modeling feasibility bound,
    * not a medical recommendation or serving guideline.
@@ -36,7 +58,9 @@ export interface ScarcityOptimizerInput {
 }
 
 export interface ScarcityFoodSelection {
+  variableId: string;
   foodId: string;
+  source: ScarcityFoodSource;
   name: string;
   quantityGrams: number;
   totalCostEtb: number;
@@ -146,22 +170,30 @@ function validateInput(
     }
   }
 
-  const foodIds = new Set<string>();
+  const variableIds = new Set<string>();
 
   for (const food of input.foods) {
+    if (!food.variableId.trim()) {
+      throw new Error(
+        "Candidate food has an empty variableId",
+      );
+    }
+
     if (!food.foodId.trim()) {
       throw new Error(
         "Candidate food has an empty foodId",
       );
     }
 
-    if (foodIds.has(food.foodId)) {
+    if (
+      variableIds.has(food.variableId)
+    ) {
       throw new Error(
-        `Duplicate candidate food: ${food.foodId}`,
+        `Duplicate candidate food variable: ${food.variableId}`,
       );
     }
 
-    foodIds.add(food.foodId);
+    variableIds.add(food.variableId);
 
     if (!food.name.trim()) {
       throw new Error(
@@ -171,7 +203,7 @@ function validateInput(
 
     if (
       !Number.isFinite(food.pricePerGram) ||
-      food.pricePerGram <= 0
+      food.pricePerGram < 0
     ) {
       throw new Error(
         `Candidate food ${food.foodId} has an invalid price`,
@@ -208,17 +240,6 @@ function validateInput(
 /**
  * Calculate weighted normalized nutrient shortfall
  * independently from the solver's tiny cost tie-breaker.
- *
- * This gives the public objectiveScore a clear meaning:
- *
- *   sum(
- *     nutrient weight
- *     × nutrient shortfall
- *     / nutrient target
- *   )
- *
- * Example:
- * a 20% energy shortfall with weight 1 contributes 0.20.
  */
 function calculateNutrientShortfallScore(
   nutrients: ScarcityNutrientResult[],
@@ -257,28 +278,14 @@ function calculateNutrientShortfallScore(
  * Deterministic scarcity optimization core.
  *
  * PRIMARY OBJECTIVE:
- *
  * Minimize weighted normalized nutrient shortfall.
  *
  * SECONDARY OBJECTIVE:
- *
  * Among nutritionally equivalent solutions,
  * prefer lower modeled purchase cost.
  *
- * Each nutrient gets an explicit shortfall variable.
- * Therefore an inadequate budget does NOT make the
- * nutrition problem infeasible.
- *
- * Instead, Nourish returns the best achievable modeled
- * nutrient coverage under the supplied constraints.
- *
- * Important:
- *
- * Nutrient reference targets are treated as minimum
- * optimization targets. Exceeding a reference target is
- * NOT automatically treated as harmful and is NOT the
- * same as exceeding a medically established tolerable
- * upper intake level.
+ * Pantry inventory is represented as a separate
+ * zero-additional-cost mathematical variable.
  *
  * Food variables represent grams of edible portion.
  */
@@ -314,9 +321,11 @@ export function optimizeScarcity(
 
   for (const food of input.foods) {
     const variableName =
-      `food:${food.foodId}`;
+      `food:${food.variableId}`;
 
-    constraints[`max:${food.foodId}`] = {
+    constraints[
+      `max:${food.variableId}`
+    ] = {
       max: food.maxGrams,
     };
 
@@ -330,7 +339,7 @@ export function optimizeScarcity(
 
       budget: food.pricePerGram,
 
-      [`max:${food.foodId}`]: 1,
+      [`max:${food.variableId}`]: 1,
     };
 
     for (const target of input.nutrientTargets) {
@@ -349,16 +358,6 @@ export function optimizeScarcity(
   /**
    * Shortfall variables make every nutrient
    * minimum constraint soft.
-   *
-   * Example:
-   *
-   * iron from foods + iron shortfall
-   * >= modeled iron target
-   *
-   * Dividing the objective coefficient by the
-   * nutrient target normalizes nutrients that
-   * otherwise use incomparable units such as
-   * kcal, grams, milligrams, and micrograms.
    */
   for (const target of input.nutrientTargets) {
     const weight = target.weight ?? 1;
@@ -411,7 +410,7 @@ export function optimizeScarcity(
   for (const food of input.foods) {
     const quantityGrams =
       solvedVariables.get(
-        `food:${food.foodId}`,
+        `food:${food.variableId}`,
       ) ?? 0;
 
     if (quantityGrams <= EPSILON) {
@@ -425,7 +424,9 @@ export function optimizeScarcity(
     totalCostEtb += totalCost;
 
     selections.push({
+      variableId: food.variableId,
       foodId: food.foodId,
+      source: food.source,
       name: food.name,
       quantityGrams,
       totalCostEtb: totalCost,
@@ -440,7 +441,7 @@ export function optimizeScarcity(
         for (const food of input.foods) {
           const quantityGrams =
             solvedVariables.get(
-              `food:${food.foodId}`,
+              `food:${food.variableId}`,
             ) ?? 0;
 
           suppliedAmount +=
@@ -481,10 +482,6 @@ export function optimizeScarcity(
       input.nutrientTargets,
     );
 
-  /**
-   * Timing will be exposed later through
-   * OptimizationService metadata.
-   */
   void durationMs;
 
   return {

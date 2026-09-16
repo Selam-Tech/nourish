@@ -22,6 +22,7 @@ interface FoodSelection {
   canonicalId: string;
   nameEn: string;
   nameAm: string | null;
+  source: "pantry" | "purchase";
   quantity: number;
   unit: string;
   unitCost: number;
@@ -302,6 +303,17 @@ export function PlanForm({
     )
   : [];
 
+  const pantrySelections =
+  optimized?.selections.filter(
+    (selection) =>
+      selection.source === "pantry",
+  ) ?? [];
+
+const purchaseSelections =
+  optimized?.selections.filter(
+    (selection) =>
+      selection.source === "purchase",
+  ) ?? [];
   return (
     <div className="space-y-6">
       <form
@@ -506,86 +518,193 @@ export function PlanForm({
             </div>
           </Card>
 
-          <Card title="Foods to use or buy">
-            {optimized.selections.length ===
-            0 ? (
-              <p
-                className="text-sm"
-                style={{
-                  color:
-                    "var(--color-text-muted)",
-                }}
-              >
-                No food quantities were
-                selected.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--color-border)]">
-                      <th className="pb-3 pr-4 font-medium">
-                        Food
-                      </th>
-                      <th className="pb-3 pr-4 font-medium">
-                        Amount
-                      </th>
-                      <th className="pb-3 text-right font-medium">
-                        Cost
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {optimized.selections.map(
-                      (selection) => (
-                        <tr
-                          key={
-                            selection.foodId
-                          }
-                          className="border-b border-[var(--color-border)] last:border-0"
-                        >
-                          <td className="py-3 pr-4">
-  <p className="font-medium">
-    {selection.nameEn}
-  </p>
-
-  {selection.nameAm && (
+          <Card title="Your food plan">
+  {optimized.selections.length === 0 ? (
     <p
-      className="mt-1 text-sm"
-      style={{ color: "var(--color-text-muted)" }}
+      className="text-sm"
+      style={{
+        color:
+          "var(--color-text-muted)",
+      }}
     >
-      {selection.nameAm}
+      No food quantities were selected.
     </p>
+  ) : (
+    <div className="space-y-6">
+      {pantrySelections.length > 0 && (
+        <div>
+          <div className="mb-3">
+            <p className="font-semibold">
+              Use from home
+            </p>
+
+            <p
+              className="mt-1 text-xs"
+              style={{
+                color:
+                  "var(--color-text-muted)",
+              }}
+            >
+              These foods are already in your
+              pantry, so they do not use your
+              purchase budget.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-[var(--color-border)]">
+                  <th className="pb-3 pr-4 font-medium">
+                    Food
+                  </th>
+
+                  <th className="pb-3 pr-4 font-medium">
+                    Amount
+                  </th>
+
+                  <th className="pb-3 text-right font-medium">
+                    Cost now
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {pantrySelections.map(
+                  (selection) => (
+                    <tr
+                      key={`${selection.source}:${selection.foodId}`}
+                      className="border-b border-[var(--color-border)] last:border-0"
+                    >
+                      <td className="py-3 pr-4">
+                        <p className="font-medium">
+                          {selection.nameEn}
+                        </p>
+
+                        {selection.nameAm && (
+                          <p
+                            className="mt-1 text-sm"
+                            style={{
+                              color:
+                                "var(--color-text-muted)",
+                            }}
+                          >
+                            {selection.nameAm}
+                          </p>
+                        )}
+                      </td>
+
+                      <td className="py-3 pr-4">
+                        {formatNumber(
+                          selection.quantity,
+                          1,
+                        )}{" "}
+                        {selection.unit}
+                      </td>
+
+                      <td className="py-3 text-right">
+                        <span className="font-medium">
+                          Already at home
+                        </span>
+                      </td>
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {purchaseSelections.length > 0 && (
+        <div>
+          <div className="mb-3">
+            <p className="font-semibold">
+              Buy
+            </p>
+
+            <p
+              className="mt-1 text-xs"
+              style={{
+                color:
+                  "var(--color-text-muted)",
+              }}
+            >
+              These are the additional foods
+              Nourish recommends buying with
+              your available budget.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-[var(--color-border)]">
+                  <th className="pb-3 pr-4 font-medium">
+                    Food
+                  </th>
+
+                  <th className="pb-3 pr-4 font-medium">
+                    Amount
+                  </th>
+
+                  <th className="pb-3 text-right font-medium">
+                    Estimated cost
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {purchaseSelections.map(
+                  (selection) => (
+                    <tr
+                      key={`${selection.source}:${selection.foodId}`}
+                      className="border-b border-[var(--color-border)] last:border-0"
+                    >
+                      <td className="py-3 pr-4">
+                        <p className="font-medium">
+                          {selection.nameEn}
+                        </p>
+
+                        {selection.nameAm && (
+                          <p
+                            className="mt-1 text-sm"
+                            style={{
+                              color:
+                                "var(--color-text-muted)",
+                            }}
+                          >
+                            {selection.nameAm}
+                          </p>
+                        )}
+                      </td>
+
+                      <td className="py-3 pr-4">
+                        {formatNumber(
+                          selection.quantity,
+                          1,
+                        )}{" "}
+                        {selection.unit}
+                      </td>
+
+                      <td className="py-3 text-right">
+                        {formatNumber(
+                          selection.totalCost,
+                          2,
+                        )}{" "}
+                        {optimized.currency}
+                      </td>
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
   )}
-</td>
-
-                          <td className="py-3 pr-4">
-                            {formatNumber(
-                              selection.quantity,
-                              1,
-                            )}{" "}
-                            {selection.unit}
-                          </td>
-
-                          <td className="py-3 text-right">
-                            {formatNumber(
-                              selection.totalCost,
-                              2,
-                            )}{" "}
-                            {
-                              optimized.currency
-                            }
-                          </td>
-                        </tr>
-                      ),
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-
+</Card>
           <Card title="Modeled nutrient coverage">
             <p
               className="mb-4 text-xs"

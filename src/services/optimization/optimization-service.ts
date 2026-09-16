@@ -59,14 +59,22 @@ export class DeterministicOptimizationService {
       );
     }
 
+    /**
+     * Pantry inventory is passed into the adapter.
+     *
+     * Pantry food becomes a zero-additional-purchase-cost
+     * optimization variable, while food that still needs
+     * to be purchased keeps its modeled ETB/gram cost.
+     */
     const foods = toScarcityFoods(
       input.candidateFoods,
+      input.pantry,
       input.excludedFoodIds,
     );
 
     if (foods.length === 0) {
       throw new Error(
-        "No priced candidate foods are available for optimization.",
+        "No usable candidate foods are available for optimization.",
       );
     }
 
@@ -74,11 +82,12 @@ export class DeterministicOptimizationService {
       input.optimizerVersion ??
       DEFAULT_OPTIMIZER_VERSION;
 
-    const scarcityResult = optimizeScarcity({
-      budgetEtb: input.budget.amount,
-      foods,
-      nutrientTargets,
-    });
+    const scarcityResult =
+      optimizeScarcity({
+        budgetEtb: input.budget.amount,
+        foods,
+        nutrientTargets,
+      });
 
     const durationMs =
       performance.now() - startedAt;
@@ -102,17 +111,21 @@ export class DeterministicOptimizationService {
             Number.POSITIVE_INFINITY,
           constraintsApplied:
             buildConstraintsApplied(input),
-          warnings: buildWarnings(input),
+          warnings:
+            buildWarnings(input),
         },
       };
     }
 
-    const candidateFoodById = new Map(
-      input.candidateFoods.map((food) => [
-        food.foodId,
-        food,
-      ]),
-    );
+    const candidateFoodById =
+      new Map(
+        input.candidateFoods.map(
+          (food) => [
+            food.foodId,
+            food,
+          ],
+        ),
+      );
 
     const selections: OptimizedFoodSelection[] =
       scarcityResult.selections.map(
@@ -129,17 +142,31 @@ export class DeterministicOptimizationService {
           }
 
           return {
-  foodId: selection.foodId,
-  canonicalId: candidate.canonicalId,
-  nameEn: candidate.nameEn,
-  nameAm: candidate.nameAm,
-  quantity: selection.quantityGrams,
-  unit: "g",
+            foodId: selection.foodId,
+            canonicalId:
+              candidate.canonicalId,
+            nameEn: candidate.nameEn,
+            nameAm: candidate.nameAm,
+
+            /**
+             * This allows the UI to distinguish:
+             *
+             * pantry   -> Use from home
+             * purchase -> Buy
+             */
+            source: selection.source,
+
+            quantity:
+              selection.quantityGrams,
+
+            unit: "g",
+
             unitCost:
               selection.quantityGrams > 0
                 ? selection.totalCostEtb /
                   selection.quantityGrams
                 : 0,
+
             totalCost:
               selection.totalCostEtb,
           };
@@ -156,16 +183,21 @@ export class DeterministicOptimizationService {
           return {
             nutrientCode:
               nutrient.nutrientCode,
+
             targetAmount:
               nutrient.targetAmount,
+
             actualAmount:
               nutrient.suppliedAmount,
+
             coverageRatio:
               nutrient.coverageRatio,
+
             unit: findRequirementUnit(
               input,
               nutrient.nutrientCode,
             ),
+
             isGap,
           };
         },
@@ -181,21 +213,24 @@ export class DeterministicOptimizationService {
         .map((nutrient) => ({
           nutrientCode:
             nutrient.nutrientCode,
+
           targetAmount:
             nutrient.targetAmount,
+
           actualAmount:
             nutrient.suppliedAmount,
+
           shortfallAmount:
             nutrient.shortfallAmount,
+
           unit: findRequirementUnit(
             input,
             nutrient.nutrientCode,
           ),
 
           /**
-           * Marginal cost is intentionally unavailable
-           * until the +10 ETB / marginal-value calculation
-           * is implemented.
+           * Marginal cost remains unavailable
+           * until the +10 ETB feature is implemented.
            */
           estimatedMarginalCost: null,
         }));
@@ -208,10 +243,18 @@ export class DeterministicOptimizationService {
 
       selections,
 
+      /**
+       * Pantry selections have zero additional cost.
+       *
+       * Therefore this value represents the modeled
+       * amount the household needs to spend now,
+       * not the historical value of food already at home.
+       */
       totalCost:
         scarcityResult.totalCostEtb,
 
-      currency: input.budget.currency,
+      currency:
+        input.budget.currency,
 
       nutrientCoverage,
 
@@ -221,11 +264,15 @@ export class DeterministicOptimizationService {
         optimizerVersion,
         calculatedAt: new Date(),
         durationMs,
+
         objectiveScore:
           scarcityResult.objectiveScore,
+
         constraintsApplied:
           buildConstraintsApplied(input),
-        warnings: buildWarnings(input),
+
+        warnings:
+          buildWarnings(input),
       },
     };
   }
@@ -242,7 +289,9 @@ export class DeterministicOptimizationService {
 
   async analyzeAffordabilityGaps(
     input: AffordabilityGapInput,
-  ): Promise<AffordabilityGapResult[]> {
+  ): Promise<
+    AffordabilityGapResult[]
+  > {
     void input;
 
     throw new Error(
@@ -297,9 +346,21 @@ function buildConstraintsApplied(
     "nutrient minimum targets",
   ];
 
-  if (input.excludedFoodIds.length > 0) {
+  if (
+    input.excludedFoodIds.length > 0
+  ) {
     constraints.push(
       "explicit food exclusions",
+    );
+  }
+
+  /**
+   * Only claim pantry inventory as an active constraint
+   * when this optimization request actually contains it.
+   */
+  if (input.pantry.length > 0) {
+    constraints.push(
+      "available household pantry inventory",
     );
   }
 
@@ -315,14 +376,14 @@ function buildWarnings(
 ): string[] {
   const warnings: string[] = [];
 
-  if (input.pantry.length > 0) {
-    warnings.push(
-      "Pantry inventory is present but is not yet included in scarcity optimization.",
-    );
-  }
+  /**
+   * Pantry is now active, so the old warning saying
+   * pantry is "not yet included" must not be returned.
+   */
 
   if (
-    input.recentNutrientHistory.length > 0
+    input.recentNutrientHistory.length >
+    0
   ) {
     warnings.push(
       "Nutrient history is present but Nutrient Memory is not yet active.",

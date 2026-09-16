@@ -86,12 +86,17 @@ export interface OptimizationInput {
   optimizerVersion?: string;
 }
 
+export type OptimizedFoodSource =
+  | "pantry"
+  | "purchase";
+
 /** A selected food item in an optimized plan */
 export interface OptimizedFoodSelection {
   foodId: string;
   canonicalId: string;
   nameEn: string;
   nameAm: string | null;
+  source: OptimizedFoodSource;
   quantity: number;
   unit: string;
   unitCost: number;

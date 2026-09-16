@@ -1,6 +1,7 @@
 import type {
   CandidateFood,
   NutrientRequirement,
+  PantrySnapshot,
 } from "@/types/optimization";
 
 import {
@@ -19,9 +20,6 @@ import type {
  * They are NOT medical recommendations, dietary guidelines,
  * or prescribed serving sizes.
  *
- * They prevent the linear optimizer from satisfying nutrient
- * targets using unrealistic quantities of a single food.
- *
  * Future versions should replace these with culturally and
  * nutritionally validated food/meal feasibility constraints.
  */
@@ -29,38 +27,28 @@ const FOOD_MAX_GRAMS_BY_CANONICAL_ID: Record<
   string,
   number
 > = {
-  // Staple foods
-  "efct2025-010090": 600, // sorghum enjera
-  "efct2025-010109": 600, // teff enjera
-  "efct2025-020011": 600, // potato
+  "efct2025-010090": 600,
+  "efct2025-010109": 600,
+  "efct2025-020011": 600,
 
-  // Pulses / legumes
-  "efct2025-030003": 250, // shiro
-  "efct2025-030006": 300, // chickpea
-  "efct2025-030032": 250, // lentil
+  "efct2025-030003": 250,
+  "efct2025-030006": 300,
+  "efct2025-030032": 250,
 
-  // Vegetables
-  "efct2025-040003": 400, // cabbage
-  "efct2025-040004": 300, // carrot
-  "efct2025-040008": 400, // Ethiopian kale
+  "efct2025-040003": 400,
+  "efct2025-040004": 300,
+  "efct2025-040008": 400,
 
-  // Fruit
-  "efct2025-050003": 300, // avocado
-  "efct2025-050005": 400, // banana
+  "efct2025-050003": 300,
+  "efct2025-050005": 400,
 
-  // Energy-dense nuts / seeds
-  "efct2025-060007": 100, // groundnut
-  "efct2025-060022": 50, // sesame
+  "efct2025-060007": 100,
+  "efct2025-060022": 50,
 
-  // Animal-source foods
-  "efct2025-080001": 200, // egg
-  "efct2025-100009": 750, // milk
+  "efct2025-080001": 200,
+  "efct2025-100009": 750,
 };
 
-/**
- * Fallback for a food that does not yet have an explicit
- * Nourish V1 feasibility bound.
- */
 export const DEFAULT_MAX_FOOD_GRAMS = 500;
 
 export function aggregateHouseholdNutrientTargets(
@@ -77,7 +65,9 @@ export function aggregateHouseholdNutrientTargets(
   for (const requirement of requirements) {
     if (
       !requirement.nutrientCode.trim() ||
-      !Number.isFinite(requirement.targetAmount) ||
+      !Number.isFinite(
+        requirement.targetAmount,
+      ) ||
       requirement.targetAmount <= 0
     ) {
       continue;
@@ -88,22 +78,29 @@ export function aggregateHouseholdNutrientTargets(
     );
 
     if (!existing) {
-      totals.set(requirement.nutrientCode, {
-        targetAmount: requirement.targetAmount,
-        unit: requirement.unit,
-      });
+      totals.set(
+        requirement.nutrientCode,
+        {
+          targetAmount:
+            requirement.targetAmount,
+          unit: requirement.unit,
+        },
+      );
 
       continue;
     }
 
-    if (existing.unit !== requirement.unit) {
+    if (
+      existing.unit !== requirement.unit
+    ) {
       throw new Error(
         `Cannot aggregate ${requirement.nutrientCode}: ` +
           `mixed units ${existing.unit} and ${requirement.unit}`,
       );
     }
 
-    existing.targetAmount += requirement.targetAmount;
+    existing.targetAmount +=
+      requirement.targetAmount;
   }
 
   return Array.from(totals.entries())
@@ -113,47 +110,127 @@ export function aggregateHouseholdNutrientTargets(
       weight: 1,
     }))
     .sort((a, b) =>
-      a.nutrientCode.localeCompare(b.nutrientCode),
+      a.nutrientCode.localeCompare(
+        b.nutrientCode,
+      ),
     );
 }
 
+/**
+ * Convert candidate foods and household pantry
+ * inventory into mathematical food variables.
+ *
+ * A pantry item and a purchased item are separate
+ * variables because pantry food has zero additional
+ * purchase cost but is limited by the quantity
+ * actually available.
+ *
+ * Pantry quantities must be expressed in grams.
+ */
 export function toScarcityFoods(
   candidateFoods: CandidateFood[],
+  pantry: PantrySnapshot[] = [],
   excludedFoodIds: string[] = [],
 ): ScarcityFood[] {
-  const excluded = new Set(excludedFoodIds);
+  const excluded = new Set(
+    excludedFoodIds,
+  );
 
-  return candidateFoods
-    .filter((food) => !excluded.has(food.foodId))
-    .filter((food) => food.price !== null)
-    .map((food) => {
-      if (!food.price) {
-        throw new Error(
-          `Food ${food.foodId} has no usable price`,
-        );
-      }
+  const pantryGramsByFoodId = new Map<
+    string,
+    number
+  >();
 
-      const normalizedPrice =
-        normalizeStoredFoodPrice(
-          food.price.amount,
-          food.price.unit,
-          food.price.currency,
-        );
+  for (const item of pantry) {
+    if (item.unit !== "g") {
+      throw new Error(
+        `Unsupported pantry unit "${item.unit}" for food ${item.foodId}. ` +
+          "Nourish V1 pantry quantities must be stored in grams.",
+      );
+    }
 
-      const maxGrams =
-        FOOD_MAX_GRAMS_BY_CANONICAL_ID[
-          food.canonicalId
-        ] ?? DEFAULT_MAX_FOOD_GRAMS;
+    if (
+      !Number.isFinite(item.quantity) ||
+      item.quantity <= 0
+    ) {
+      continue;
+    }
 
-      return {
+    pantryGramsByFoodId.set(
+      item.foodId,
+      (pantryGramsByFoodId.get(
+        item.foodId,
+      ) ?? 0) + item.quantity,
+    );
+  }
+
+  const scarcityFoods: ScarcityFood[] = [];
+
+  for (const food of candidateFoods) {
+    if (excluded.has(food.foodId)) {
+      continue;
+    }
+
+    if (!food.price) {
+      continue;
+    }
+
+    const normalizedPrice =
+      normalizeStoredFoodPrice(
+        food.price.amount,
+        food.price.unit,
+        food.price.currency,
+      );
+
+    const maxGrams =
+      FOOD_MAX_GRAMS_BY_CANONICAL_ID[
+        food.canonicalId
+      ] ?? DEFAULT_MAX_FOOD_GRAMS;
+
+    const pantryGrams = Math.min(
+      pantryGramsByFoodId.get(
+        food.foodId,
+      ) ?? 0,
+      maxGrams,
+    );
+
+    if (pantryGrams > 0) {
+      scarcityFoods.push({
+        variableId:
+          `pantry:${food.foodId}`,
         foodId: food.foodId,
+        source: "pantry",
+        name: food.nameEn,
+        pricePerGram: 0,
+        nutrientsPer100g: {
+          ...food.nutrientsPer100g,
+        },
+        maxGrams: pantryGrams,
+      });
+    }
+
+    const purchaseMaxGrams =
+      Math.max(
+        0,
+        maxGrams - pantryGrams,
+      );
+
+    if (purchaseMaxGrams > 0) {
+      scarcityFoods.push({
+        variableId:
+          `purchase:${food.foodId}`,
+        foodId: food.foodId,
+        source: "purchase",
         name: food.nameEn,
         pricePerGram:
           normalizedPrice.pricePerGram,
         nutrientsPer100g: {
           ...food.nutrientsPer100g,
         },
-        maxGrams,
-      };
-    });
+        maxGrams: purchaseMaxGrams,
+      });
+    }
+  }
+
+  return scarcityFoods;
 }

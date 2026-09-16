@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+} from "vitest";
+
 import type {
   CandidateFood,
   NutrientRequirement,
+  PantrySnapshot,
 } from "@/types/optimization";
 
 import {
@@ -10,88 +16,94 @@ import {
   toScarcityFoods,
 } from "@/services/optimization/optimization-adapter";
 
-describe("aggregateHouseholdNutrientTargets", () => {
-  it("sums member requirements by nutrient", () => {
-    const requirements: NutrientRequirement[] = [
-      {
-        nutrientCode: "protein",
-        targetAmount: 50,
-        unit: "g",
-        memberId: "member-1",
-      },
-      {
-        nutrientCode: "protein",
-        targetAmount: 40,
-        unit: "g",
-        memberId: "member-2",
-      },
-      {
-        nutrientCode: "iron",
-        targetAmount: 10,
-        unit: "mg",
-        memberId: "member-1",
-      },
-    ];
+describe(
+  "aggregateHouseholdNutrientTargets",
+  () => {
+    it("sums member requirements by nutrient", () => {
+      const requirements: NutrientRequirement[] =
+        [
+          {
+            nutrientCode: "protein",
+            targetAmount: 50,
+            unit: "g",
+            memberId: "member-1",
+          },
+          {
+            nutrientCode: "protein",
+            targetAmount: 40,
+            unit: "g",
+            memberId: "member-2",
+          },
+          {
+            nutrientCode: "iron",
+            targetAmount: 10,
+            unit: "mg",
+            memberId: "member-1",
+          },
+        ];
 
-    const result =
-      aggregateHouseholdNutrientTargets(
-        requirements,
-      );
+      const result =
+        aggregateHouseholdNutrientTargets(
+          requirements,
+        );
 
-    expect(result).toEqual([
-      {
-        nutrientCode: "iron",
-        targetAmount: 10,
-        weight: 1,
-      },
-      {
-        nutrientCode: "protein",
-        targetAmount: 90,
-        weight: 1,
-      },
-    ]);
-  });
+      expect(result).toEqual([
+        {
+          nutrientCode: "iron",
+          targetAmount: 10,
+          weight: 1,
+        },
+        {
+          nutrientCode: "protein",
+          targetAmount: 90,
+          weight: 1,
+        },
+      ]);
+    });
 
-  it("rejects mixed units for the same nutrient", () => {
-    const requirements: NutrientRequirement[] = [
-      {
-        nutrientCode: "protein",
-        targetAmount: 50,
-        unit: "g",
-        memberId: "member-1",
-      },
-      {
-        nutrientCode: "protein",
-        targetAmount: 50000,
-        unit: "mg",
-        memberId: "member-2",
-      },
-    ];
+    it("rejects mixed units for the same nutrient", () => {
+      const requirements: NutrientRequirement[] =
+        [
+          {
+            nutrientCode: "protein",
+            targetAmount: 50,
+            unit: "g",
+            memberId: "member-1",
+          },
+          {
+            nutrientCode: "protein",
+            targetAmount: 50000,
+            unit: "mg",
+            memberId: "member-2",
+          },
+        ];
 
-    expect(() =>
-      aggregateHouseholdNutrientTargets(
-        requirements,
-      ),
-    ).toThrow("mixed units");
-  });
+      expect(() =>
+        aggregateHouseholdNutrientTargets(
+          requirements,
+        ),
+      ).toThrow("mixed units");
+    });
 
-  it("ignores invalid targets", () => {
-    const requirements: NutrientRequirement[] = [
-      {
-        nutrientCode: "protein",
-        targetAmount: 0,
-        unit: "g",
-        memberId: "member-1",
-      },
-    ];
+    it("ignores invalid targets", () => {
+      const requirements: NutrientRequirement[] =
+        [
+          {
+            nutrientCode: "protein",
+            targetAmount: 0,
+            unit: "g",
+            memberId: "member-1",
+          },
+        ];
 
-    expect(
-      aggregateHouseholdNutrientTargets(
-        requirements,
-      ),
-    ).toEqual([]);
-  });
-});
+      expect(
+        aggregateHouseholdNutrientTargets(
+          requirements,
+        ),
+      ).toEqual([]);
+    });
+  },
+);
 
 describe("toScarcityFoods", () => {
   const food: CandidateFood = {
@@ -116,14 +128,27 @@ describe("toScarcityFoods", () => {
     },
   };
 
-  it("converts ETB/kg into ETB/gram", () => {
-    const result = toScarcityFoods([food]);
+  it("creates a purchase variable and converts ETB/kg into ETB/gram", () => {
+    const result =
+      toScarcityFoods([food]);
 
     expect(result).toHaveLength(1);
 
-    expect(result[0].pricePerGram).toBeCloseTo(
-      0.16,
+    expect(result[0].variableId).toBe(
+      "purchase:food-1",
     );
+
+    expect(result[0].foodId).toBe(
+      "food-1",
+    );
+
+    expect(result[0].source).toBe(
+      "purchase",
+    );
+
+    expect(
+      result[0].pricePerGram,
+    ).toBeCloseTo(0.16);
 
     expect(result[0].maxGrams).toBe(
       DEFAULT_MAX_FOOD_GRAMS,
@@ -131,7 +156,8 @@ describe("toScarcityFoods", () => {
   });
 
   it("preserves nutrient values per 100g", () => {
-    const result = toScarcityFoods([food]);
+    const result =
+      toScarcityFoods([food]);
 
     expect(
       result[0].nutrientsPer100g.energy,
@@ -142,9 +168,123 @@ describe("toScarcityFoods", () => {
     ).toBe(10);
   });
 
-  it("removes excluded foods", () => {
+  it("creates separate pantry and purchase variables", () => {
+    const pantry: PantrySnapshot[] = [
+      {
+        foodId: "food-1",
+        quantity: 100,
+        unit: "g",
+      },
+    ];
+
     const result = toScarcityFoods(
       [food],
+      pantry,
+    );
+
+    expect(result).toHaveLength(2);
+
+    const pantryFood = result.find(
+      (item) =>
+        item.source === "pantry",
+    );
+
+    const purchaseFood = result.find(
+      (item) =>
+        item.source === "purchase",
+    );
+
+    expect(pantryFood).toBeDefined();
+    expect(purchaseFood).toBeDefined();
+
+    expect(
+      pantryFood?.variableId,
+    ).toBe("pantry:food-1");
+
+    expect(
+      pantryFood?.pricePerGram,
+    ).toBe(0);
+
+    expect(
+      pantryFood?.maxGrams,
+    ).toBe(100);
+
+    expect(
+      purchaseFood?.variableId,
+    ).toBe("purchase:food-1");
+
+    expect(
+      purchaseFood?.maxGrams,
+    ).toBe(
+      DEFAULT_MAX_FOOD_GRAMS - 100,
+    );
+  });
+
+  it("does not allow pantry plus purchases to exceed the food feasibility bound", () => {
+    const pantry: PantrySnapshot[] = [
+      {
+        foodId: "food-1",
+        quantity:
+          DEFAULT_MAX_FOOD_GRAMS + 200,
+        unit: "g",
+      },
+    ];
+
+    const result = toScarcityFoods(
+      [food],
+      pantry,
+    );
+
+    expect(result).toHaveLength(1);
+
+    expect(result[0].source).toBe(
+      "pantry",
+    );
+
+    expect(result[0].maxGrams).toBe(
+      DEFAULT_MAX_FOOD_GRAMS,
+    );
+  });
+
+  it("combines multiple pantry records for the same food", () => {
+    const pantry: PantrySnapshot[] = [
+      {
+        foodId: "food-1",
+        quantity: 50,
+        unit: "g",
+      },
+      {
+        foodId: "food-1",
+        quantity: 75,
+        unit: "g",
+      },
+    ];
+
+    const result = toScarcityFoods(
+      [food],
+      pantry,
+    );
+
+    const pantryFood = result.find(
+      (item) =>
+        item.source === "pantry",
+    );
+
+    expect(
+      pantryFood?.maxGrams,
+    ).toBe(125);
+  });
+
+  it("removes excluded foods including their pantry inventory", () => {
+    const result = toScarcityFoods(
+      [food],
+      [
+        {
+          foodId: "food-1",
+          quantity: 100,
+          unit: "g",
+        },
+      ],
       ["food-1"],
     );
 
@@ -173,6 +313,25 @@ describe("toScarcityFoods", () => {
           },
         },
       ]),
-    ).toThrow("Unsupported price unit");
+    ).toThrow(
+      "Unsupported price unit",
+    );
+  });
+
+  it("rejects unsupported pantry units", () => {
+    expect(() =>
+      toScarcityFoods(
+        [food],
+        [
+          {
+            foodId: "food-1",
+            quantity: 1,
+            unit: "kg",
+          },
+        ],
+      ),
+    ).toThrow(
+      "pantry quantities must be stored in grams",
+    );
   });
 });
