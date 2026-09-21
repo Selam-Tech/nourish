@@ -77,7 +77,7 @@ export async function runHouseholdOptimization(
 
   try {
     /*
-     * First calculate the household's normal plan.
+     * Calculate the household's normal plan.
      */
     const result =
       await optimizationService.optimize(
@@ -118,11 +118,11 @@ export async function runHouseholdOptimization(
     }
 
     /*
-     * Run the same deterministic optimizer again with
+     * Run the same deterministic optimizer with
      * 10 additional ETB.
      *
-     * This powers Nourish's:
-     * "What could 10 more Birr do?" feature.
+     * This powers:
+     * "What could 10 more Birr do?"
      *
      * No AI guesses nutrient values or food choices.
      */
@@ -135,6 +135,10 @@ export async function runHouseholdOptimization(
         },
       );
 
+    /*
+     * Resolve optimizer nutrient codes to the real
+     * NutrientDefinition database IDs.
+     */
     const nutrientDefinitions =
       await prisma.nutrientDefinition.findMany(
         {
@@ -158,6 +162,10 @@ export async function runHouseholdOptimization(
       ),
     );
 
+    /*
+     * Fail safely if an optimizer nutrient does not
+     * exist in the verified nutrient definitions.
+     */
     for (
       const coverage of
       result.nutrientCoverage
@@ -175,10 +183,13 @@ export async function runHouseholdOptimization(
 
     const calculationMeta = {
       optimizerStatus: result.status,
+
       objectiveScore:
         result.metadata.objectiveScore,
+
       constraintsApplied:
         result.metadata.constraintsApplied,
+
       warnings: [
         ...readiness.warnings,
         ...result.metadata.warnings,
@@ -202,8 +213,8 @@ export async function runHouseholdOptimization(
         ),
 
       /*
-       * Store a small audit summary of the marginal
-       * calculation with the MealPlan.
+       * Store an audit summary of the marginal
+       * nutrition calculation with the MealPlan.
        */
       marginalNutritionValue: {
         additionalBudget:
@@ -225,12 +236,25 @@ export async function runHouseholdOptimization(
             (selection) => ({
               foodId: selection.foodId,
               source: selection.source,
-              quantity: selection.quantity,
+              quantity:
+                selection.quantity,
               unit: selection.unit,
               totalCost:
                 selection.totalCost,
             }),
           ),
+      },
+
+      /*
+       * Nutrient Memory records modeled dietary
+       * coverage. It is not a biological measurement
+       * and is not a diagnosis of nutrient deficiency.
+       */
+      nutrientMemory: {
+        recorded: true,
+        recordDate:
+          planDate.toISOString(),
+        sourceType: "CALCULATED",
       },
 
       calculatedAt:
@@ -240,12 +264,19 @@ export async function runHouseholdOptimization(
         result.metadata.durationMs,
     } satisfies Prisma.InputJsonObject;
 
+    /*
+     * Persist the complete result atomically.
+     *
+     * If any database operation fails, none of these
+     * changes are committed.
+     */
     await prisma.$transaction(
       async (tx) => {
         /*
-         * Delete first so this function can safely
-         * replace a previous calculation for the same
-         * MealPlan if needed.
+         * Delete previous calculated records for this
+         * MealPlan before replacing them.
+         *
+         * This makes recalculation idempotent.
          */
         await tx.mealPlanItem.deleteMany({
           where: { mealPlanId },
@@ -257,6 +288,22 @@ export async function runHouseholdOptimization(
           },
         );
 
+        /*
+         * Remove Nutrient Memory rows previously
+         * generated from this MealPlan.
+         *
+         * This prevents duplicate memory records when
+         * the same plan is recalculated.
+         */
+        await tx.nutrientHistory.deleteMany({
+          where: {
+            sourcePlanId: mealPlanId,
+          },
+        });
+
+        /*
+         * Persist selected foods.
+         */
         if (
           result.selections.length > 0
         ) {
@@ -279,6 +326,11 @@ export async function runHouseholdOptimization(
           });
         }
 
+        /*
+         * Persist nutrient coverage for the MealPlan
+         * and write the same calculated dietary
+         * coverage into Nutrient Memory.
+         */
         if (
           result.nutrientCoverage.length >
           0
@@ -306,8 +358,49 @@ export async function runHouseholdOptimization(
                 ),
             },
           );
+
+          /*
+           * Nutrient Memory:
+           *
+           * Store the modeled dietary coverage from
+           * this plan so future plans can identify
+           * recurring dietary patterns.
+           *
+           * IMPORTANT:
+           * These values do not represent blood levels,
+           * body stores, or a medical diagnosis.
+           */
+          await tx.nutrientHistory.createMany({
+            data:
+              result.nutrientCoverage.map(
+                (coverage) => ({
+                  householdId,
+                  nutrientId:
+                    nutrientIdByCode.get(
+                      coverage.nutrientCode,
+                    )!,
+                  recordDate: planDate,
+                  targetAmount:
+                    coverage.targetAmount,
+                  actualAmount:
+                    coverage.actualAmount,
+                  coverageRatio:
+                    coverage.coverageRatio,
+                  unit: coverage.unit,
+                  sourcePlanId:
+                    mealPlanId,
+                  sourceType:
+                    "CALCULATED",
+                }),
+              ),
+          });
         }
 
+        /*
+         * Mark the MealPlan successful only after all
+         * selections, coverage, and Nutrient Memory
+         * records have been written successfully.
+         */
         await tx.mealPlan.update({
           where: { id: mealPlanId },
           data: {
