@@ -47,6 +47,18 @@ interface UnresolvedGap {
   estimatedMarginalCost: number | null;
 }
 
+interface MarginalNutrientImprovement {
+  nutrientCode: string;
+  additionalAmount: number;
+  unit: string;
+}
+
+interface MarginalValue {
+  additionalBudget: number;
+  improvedNutrients: MarginalNutrientImprovement[];
+  recommendedFoodAdditions: FoodSelection[];
+}
+
 interface OptimizedPlanResult {
   mealPlanId: string;
   status: "OPTIMIZED";
@@ -57,6 +69,7 @@ interface OptimizedPlanResult {
   nutrientCoverage: NutrientCoverage[];
   unresolvedGaps: UnresolvedGap[];
   readiness: Readiness;
+  marginalValue: MarginalValue;
 }
 
 interface PendingPlanResult {
@@ -702,6 +715,175 @@ const purchaseSelections =
           </div>
         </div>
       )}
+    </div>
+  )}
+</Card>
+<Card title="What could 10 more Birr do?">
+  <p
+    className="mb-4 text-sm"
+    style={{
+      color: "var(--color-text-muted)",
+    }}
+  >
+    Nourish reruns the same nutrition optimizer with{" "}
+    {formatNumber(
+      optimized.marginalValue.additionalBudget,
+      0,
+    )}{" "}
+    more {optimized.currency} to show where extra money
+    could improve this modeled plan.
+  </p>
+
+  {optimized.marginalValue.improvedNutrients.length ===
+    0 ? (
+    <div className="rounded-lg border border-[var(--color-border)] p-4">
+      <Badge variant="success">
+        Current modeled targets already reached
+      </Badge>
+
+      <p
+        className="mt-3 text-sm"
+        style={{
+          color: "var(--color-text-muted)",
+        }}
+      >
+        An extra{" "}
+        {formatNumber(
+          optimized.marginalValue.additionalBudget,
+          0,
+        )}{" "}
+        {optimized.currency} does not improve the
+        currently modeled nutrient targets under the
+        available foods and constraints.
+      </p>
+    </div>
+  ) : (
+    <div className="space-y-5">
+      <div>
+        <p className="mb-3 font-semibold">
+          Additional food to buy
+        </p>
+
+        {optimized.marginalValue
+          .recommendedFoodAdditions.length === 0 ? (
+          <p
+            className="text-sm"
+            style={{
+              color: "var(--color-text-muted)",
+            }}
+          >
+            No additional purchase was selected.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-[var(--color-border)]">
+                  <th className="pb-3 pr-4 font-medium">
+                    Food
+                  </th>
+
+                  <th className="pb-3 pr-4 font-medium">
+                    Extra amount
+                  </th>
+
+                  <th className="pb-3 text-right font-medium">
+                    Estimated cost
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {optimized.marginalValue.recommendedFoodAdditions.map(
+                  (selection) => (
+                    <tr
+                      key={`marginal:${selection.source}:${selection.foodId}`}
+                      className="border-b border-[var(--color-border)] last:border-0"
+                    >
+                      <td className="py-3 pr-4">
+                        <p className="font-medium">
+                          {selection.nameEn}
+                        </p>
+
+                        {selection.nameAm && (
+                          <p
+                            className="mt-1 text-sm"
+                            style={{
+                              color:
+                                "var(--color-text-muted)",
+                            }}
+                          >
+                            {selection.nameAm}
+                          </p>
+                        )}
+                      </td>
+
+                      <td className="py-3 pr-4">
+                        +
+                        {formatNumber(
+                          selection.quantity,
+                          1,
+                        )}{" "}
+                        {selection.unit}
+                      </td>
+
+                      <td className="py-3 text-right">
+                        {formatNumber(
+                          selection.totalCost,
+                          2,
+                        )}{" "}
+                        {optimized.currency}
+                      </td>
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <p className="mb-3 font-semibold">
+          Modeled nutrition improvement
+        </p>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {optimized.marginalValue.improvedNutrients.map(
+            (nutrient) => (
+              <div
+                key={`marginal:${nutrient.nutrientCode}`}
+                className="rounded-lg border border-[var(--color-border)] p-4"
+              >
+                <p className="text-sm font-medium">
+                  {nutrientName(
+                    nutrient.nutrientCode,
+                  )}
+                </p>
+
+                <p className="mt-1 text-lg font-bold">
+                  +
+                  {formatNumber(
+                    nutrient.additionalAmount,
+                    1,
+                  )}{" "}
+                  {nutrient.unit}
+                </p>
+              </div>
+            ),
+          )}
+        </div>
+      </div>
+
+      <p
+        className="text-xs"
+        style={{
+          color: "var(--color-text-muted)",
+        }}
+      >
+        This is a modeled dietary comparison, not a
+        medical diagnosis or treatment recommendation.
+      </p>
     </div>
   )}
 </Card>

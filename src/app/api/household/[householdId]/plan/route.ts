@@ -89,7 +89,8 @@ export async function POST(
           optimization.result.nutrientCoverage,
         unresolvedGaps:
           optimization.result.unresolvedGaps,
-        metadata: optimization.result.metadata,
+                metadata: optimization.result.metadata,
+        marginalValue: optimization.marginalValue,
         readiness: optimization.readiness,
       },
       { status: 201 },
