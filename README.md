@@ -21,7 +21,7 @@ Nourish is an ongoing project. These screenshots show the current prototype, not
 ![Household dashboard](docs/screenshots/Household.png)
 
 ### Pantry and Budget
-![Pantry and budget](docs/screenshots/pantry.png)
+![Pantry and budget](docs/screenshots/Pantry.png)
 
 ### Meal History
 ![Meal history](docs/screenshots/NutrientHistory.png)
