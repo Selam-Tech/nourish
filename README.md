@@ -5,6 +5,27 @@
 Nourish is an Ethiopia-first, globally extensible nutrition-affordability platform. Its central question:
 
 > *What is the best achievable nutrition this household can get from the food and money it actually has?*
+>
+> 
+## Nourish — Application Screenshots
+
+Nourish is an ongoing project. These screenshots show the current prototype, not a fully launched nutrition service.
+
+### Landing Page
+![Nourish landing page](docs/screenshots/landing.png)
+
+###Dashboard
+![dashboard](docs/screenshots/dashboard.png)
+
+### Household Dashboard
+![Household dashboard](docs/screenshots/Household.png)
+
+### Pantry and Budget
+![Pantry and budget](docs/screenshots/pantry.png)
+
+### Meal History
+![Meal history](docs/screenshots/Nutrient History.png)
+
 
 ## The Problem
 
